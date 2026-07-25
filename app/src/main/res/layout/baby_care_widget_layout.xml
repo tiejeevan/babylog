@@ -1,0 +1,286 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#16121E"
+    android:orientation="vertical"
+    android:padding="12dp">
+
+    <!-- Header Bar -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <TextView
+            android:id="@+id/widget_title"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="BabyCare Live 🍼"
+            android:textColor="#FFD8E4"
+            android:textSize="15sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/widget_baby_name"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="#4A2838"
+            android:paddingLeft="10dp"
+            android:paddingTop="4dp"
+            android:paddingRight="10dp"
+            android:paddingBottom="4dp"
+            android:text="Your Baby"
+            android:textColor="#FFACCE"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <!-- Divider -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginTop="6dp"
+        android:layout_marginBottom="6dp"
+        android:background="#362E3B" />
+
+    <!-- Live Active Action Banner (Visible when live activity running) -->
+    <LinearLayout
+        android:id="@+id/widget_live_container"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="#2E1F2A"
+        android:orientation="vertical"
+        android:padding="10dp"
+        android:layout_marginBottom="6dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/widget_live_badge"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="🔴 LIVE: SLEEPING 😴"
+                android:textColor="#FF83A8"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/widget_live_timer"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="00:24:12"
+                android:textColor="#FFFFFF"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/widget_live_countdown"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="Started at 2:15 PM • Live sync enabled"
+            android:textColor="#E0C2CE"
+            android:textSize="11sp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/btn_widget_stop_live"
+                android:layout_width="0dp"
+                android:layout_height="36dp"
+                android:layout_marginEnd="4dp"
+                android:layout_weight="1"
+                android:background="#E91E63"
+                android:gravity="center"
+                android:text="Stop / Save ⏹️"
+                android:textColor="#FFFFFF"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/btn_widget_pause_live"
+                android:layout_width="0dp"
+                android:layout_height="36dp"
+                android:layout_marginStart="4dp"
+                android:layout_weight="1"
+                android:background="#FF9800"
+                android:gravity="center"
+                android:text="Pause ⏸️"
+                android:textColor="#1B1721"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- Basic Info For The Day Section -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="#221C2B"
+        android:padding="8dp"
+        android:orientation="horizontal">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="🍼 Feeds Today"
+                android:textColor="#D3B8C5"
+                android:textSize="10sp" />
+
+            <TextView
+                android:id="@+id/widget_today_feeds"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="0 feeds (0 ml)"
+                android:textColor="#FFFFFF"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="😴 Sleep Today"
+                android:textColor="#D3B8C5"
+                android:textSize="10sp" />
+
+            <TextView
+                android:id="@+id/widget_today_sleep"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="0h 0m (0 naps)"
+                android:textColor="#A8EFF0"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="🧷 Diapers"
+                android:textColor="#D3B8C5"
+                android:textSize="10sp" />
+
+            <TextView
+                android:id="@+id/widget_today_diapers"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="0 changes"
+                android:textColor="#FFE082"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- Contextual Last Activities Status Banner -->
+    <TextView
+        android:id="@+id/widget_last_activities_text"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:background="#1B1625"
+        android:paddingLeft="8dp"
+        android:paddingTop="4dp"
+        android:paddingRight="8dp"
+        android:paddingBottom="4dp"
+        android:text="Last Feed: Never • Last Diaper: Never"
+        android:textColor="#CBBBC3"
+        android:textSize="11sp" />
+
+    <!-- Quick Action Buttons Row -->
+    <LinearLayout
+        android:id="@+id/widget_quick_actions_container"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:orientation="horizontal">
+
+        <TextView
+            android:id="@+id/btn_widget_start_feed"
+            android:layout_width="0dp"
+            android:layout_height="36dp"
+            android:layout_marginEnd="3dp"
+            android:layout_weight="1"
+            android:background="#D0BCFF"
+            android:gravity="center"
+            android:text="+ Bottle 🍼"
+            android:textColor="#381E72"
+            android:textSize="11sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/btn_widget_start_nursing"
+            android:layout_width="0dp"
+            android:layout_height="36dp"
+            android:layout_marginStart="2dp"
+            android:layout_marginEnd="2dp"
+            android:layout_weight="1"
+            android:background="#F48FB1"
+            android:gravity="center"
+            android:text="+ Nurse 🤱"
+            android:textColor="#4A001F"
+            android:textSize="11sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/btn_widget_start_sleep"
+            android:layout_width="0dp"
+            android:layout_height="36dp"
+            android:layout_marginStart="2dp"
+            android:layout_marginEnd="2dp"
+            android:layout_weight="1"
+            android:background="#4FD8EB"
+            android:gravity="center"
+            android:text="+ Sleep 😴"
+            android:textColor="#00363A"
+            android:textSize="11sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/btn_widget_log_diaper"
+            android:layout_width="0dp"
+            android:layout_height="36dp"
+            android:layout_marginStart="3dp"
+            android:layout_weight="1"
+            android:background="#FFE082"
+            android:gravity="center"
+            android:text="+ Diaper 🧷"
+            android:textColor="#4E342E"
+            android:textSize="11sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+</LinearLayout>

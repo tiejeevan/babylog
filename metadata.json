@@ -1,0 +1,6 @@
+{
+  "name": "BabyCare Live",
+  "description": "Live real-time baby care operating system with activity tracking, intelligent predictions, caregiver coordination, and growth analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="log_feed"
+        android:enabled="true"
+        android:icon="@drawable/ic_launcher_foreground"
+        android:shortcutShortLabel="@string/shortcut_feed_short"
+        android:shortcutLongLabel="@string/shortcut_feed_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.aistudio.babycarelive.bclive"
+            android:targetClass="com.example.MainActivity">
+            <extra android:name="quick_action" android:value="LOG_FEED" />
+        </intent>
+    </shortcut>
+    <shortcut
+        android:shortcutId="log_sleep"
+        android:enabled="true"
+        android:icon="@drawable/ic_launcher_foreground"
+        android:shortcutShortLabel="@string/shortcut_sleep_short"
+        android:shortcutLongLabel="@string/shortcut_sleep_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.aistudio.babycarelive.bclive"
+            android:targetClass="com.example.MainActivity">
+            <extra android:name="quick_action" android:value="LOG_SLEEP" />
+        </intent>
+    </shortcut>
+    <shortcut
+        android:shortcutId="log_diaper"
+        android:enabled="true"
+        android:icon="@drawable/ic_launcher_foreground"
+        android:shortcutShortLabel="@string/shortcut_diaper_short"
+        android:shortcutLongLabel="@string/shortcut_diaper_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.aistudio.babycarelive.bclive"
+            android:targetClass="com.example.MainActivity">
+            <extra android:name="quick_action" android:value="LOG_DIAPER" />
+        </intent>
+    </shortcut>
+</shortcuts>

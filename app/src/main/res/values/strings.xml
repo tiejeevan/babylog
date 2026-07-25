@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">BabyCare Live</string>
+    <string name="shortcut_feed_short">Log Feed</string>
+    <string name="shortcut_feed_long">Quick Feed Log</string>
+    <string name="shortcut_sleep_short">Log Nap</string>
+    <string name="shortcut_sleep_long">Quick Sleep Timer</string>
+    <string name="shortcut_diaper_short">Log Diaper</string>
+    <string name="shortcut_diaper_long">Quick Diaper Change</string>
+</resources>
