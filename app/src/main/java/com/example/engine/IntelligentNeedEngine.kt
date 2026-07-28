@@ -3,6 +3,7 @@ package com.example.engine
 import com.example.data.model.ActivityLog
 import com.example.data.model.ActivityTypes
 import com.example.data.model.BabyProfile
+import com.example.data.model.CareCheckSettings
 import java.util.concurrent.TimeUnit
 
 enum class UrgencyLevel {
@@ -35,7 +36,50 @@ data class TodaySummary(
     val lastPumpedMinutesAgo: Long = -1
 )
 
+/**
+ * Absolute trigger times for the next feed / diaper / nap care reminders.
+ * Matches Need Engine interval rules so UI and AlarmManager stay aligned.
+ */
+data class RoutineTriggers(
+    val feedAtMillis: Long,
+    val diaperAtMillis: Long,
+    val napAtMillis: Long
+)
+
 object IntelligentNeedEngine {
+
+    const val DIAPER_INTERVAL_MINUTES = 180
+
+    fun computeRoutineTriggers(
+        profile: BabyProfile?,
+        logs: List<ActivityLog>,
+        currentTimeMillis: Long = System.currentTimeMillis(),
+        diaperIntervalMinutes: Int = DIAPER_INTERVAL_MINUTES
+    ): RoutineTriggers {
+        val settings = CareCheckSettings(
+            feedReminderEnabled = true,
+            feedAlarmEnabled = true,
+            diaperReminderEnabled = true,
+            diaperAlarmEnabled = true,
+            sleepEnabled = true,
+            diaperUseAppTiming = false,
+            diaperIntervalMinutes = diaperIntervalMinutes
+        )
+        val care = ReminderTiming.computeCareCheckTriggers(
+            profile = profile,
+            settings = settings,
+            logs = logs,
+            nowMillis = currentTimeMillis
+        )
+        return RoutineTriggers(
+            feedAtMillis = care.feedAtMillis ?: (currentTimeMillis +
+                (profile?.targetFeedingIntervalMinutes ?: 180).coerceAtLeast(1) * 60_000L),
+            diaperAtMillis = care.diaperAtMillis ?: (currentTimeMillis +
+                diaperIntervalMinutes.coerceAtLeast(1) * 60_000L),
+            napAtMillis = care.sleepAtMillis ?: (currentTimeMillis +
+                (profile?.targetNapIntervalMinutes ?: 150).coerceAtLeast(1) * 60_000L)
+        )
+    }
 
     fun analyzeBabyNeeds(
         profile: BabyProfile?,
@@ -138,7 +182,7 @@ object IntelligentNeedEngine {
         }
 
         // Rule 2: Diaper check overdue
-        if (minutesSinceDiaper >= 180) {
+        if (minutesSinceDiaper >= DIAPER_INTERVAL_MINUTES) {
             return BabyNeedPrediction(
                 primaryNeedTitle = "Diaper Check Recommended 👶",
                 confidencePercentage = 88,

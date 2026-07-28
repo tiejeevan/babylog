@@ -13,11 +13,10 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -32,20 +31,24 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
+import com.example.data.model.BabyBirthDefaults
 import com.example.data.model.BabyProfile
+import com.example.ui.theme.Dimens
 import java.text.SimpleDateFormat
 import java.util.*
+
+private val stepTitles = listOf("Permissions", "Your profile", "Baby profile")
 
 @Composable
 fun OnboardingSetupDialog(
@@ -56,7 +59,6 @@ fun OnboardingSetupDialog(
     val context = LocalContext.current
     var currentStep by remember { mutableIntStateOf(0) }
 
-    // Step 0: Permission States with dynamic System Verification
     var hasNotificationPermission by remember { mutableStateOf(checkNotificationPermissionStatus(context)) }
     var hasBackgroundRunAllowed by remember { mutableStateOf(checkBackgroundRunPermissionStatus(context)) }
     var hasSleepLockConfigured by remember { mutableStateOf(checkSleepLockPermissionStatus(context)) }
@@ -79,46 +81,78 @@ fun OnboardingSetupDialog(
     val notificationLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { isGranted ->
-        hasNotificationPermission = isGranted
+        hasNotificationPermission = checkNotificationPermissionStatus(context)
         if (isGranted) {
-            Toast.makeText(context, "Notification permission granted! 🔔", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "Notification permission granted", Toast.LENGTH_SHORT).show()
+        } else {
+            openNotificationSettings(context)
         }
     }
 
-    // Step 1: Caregiver Identity State
     var caregiverRole by remember { mutableStateOf(initialProfile?.primaryCaregiverRole ?: "Mom") }
     var caregiverName by remember { mutableStateOf(initialProfile?.primaryCaregiverName ?: "Mom") }
 
-    // Step 2: Baby Details State
-    var babyNameText by remember { mutableStateOf(if (initialProfile?.name == "Your Baby" || initialProfile?.name == "Emma") "" else (initialProfile?.name ?: "")) }
-    
+    var babyNameText by remember {
+        mutableStateOf(
+            if (initialProfile?.name == "Your Baby" || initialProfile?.name == "Emma") ""
+            else (initialProfile?.name ?: "")
+        )
+    }
+
     val initialCalendar = remember {
-        Calendar.getInstance().apply {
-            timeInMillis = initialProfile?.birthDateMillis ?: (System.currentTimeMillis() - (60L * 24 * 3600 * 1000))
+        if (initialProfile?.isInitialSetupDone == true) {
+            Calendar.getInstance().apply { timeInMillis = initialProfile.birthDateMillis }
+        } else {
+            BabyBirthDefaults.birthCalendar()
         }
     }
     var birthDateCalendar by remember { mutableStateOf(initialCalendar) }
-    var birthTimeText by remember { mutableStateOf(initialProfile?.birthTimeFormatted ?: "08:30 AM") }
+    var birthTimeText by remember {
+        mutableStateOf(
+            if (initialProfile?.isInitialSetupDone == true) {
+                initialProfile.birthTimeFormatted
+            } else {
+                BabyBirthDefaults.BIRTH_TIME_FORMATTED
+            }
+        )
+    }
 
     var weightText by remember { mutableStateOf((initialProfile?.initialWeightKg ?: 3.5).toString()) }
     var heightText by remember { mutableStateOf((initialProfile?.initialHeightCm ?: 50.0).toString()) }
     var selectedGender by remember { mutableStateOf(initialProfile?.gender ?: "Girl") }
-    
-    var feedIntervalHoursText by remember { mutableStateOf(((initialProfile?.targetFeedingIntervalMinutes ?: 180) / 60.0).toString()) }
-    var napIntervalHoursText by remember { mutableStateOf(((initialProfile?.targetNapIntervalMinutes ?: 150) / 60.0).toString()) }
+
+    var feedIntervalHoursText by remember {
+        mutableStateOf(((initialProfile?.targetFeedingIntervalMinutes ?: 180) / 60.0).toString())
+    }
+    var napIntervalHoursText by remember {
+        mutableStateOf(((initialProfile?.targetNapIntervalMinutes ?: 150) / 60.0).toString())
+    }
 
     val dateFormatter = remember { SimpleDateFormat("MMMM d, yyyy", Locale.getDefault()) }
+    val configuration = LocalConfiguration.current
+    val density = LocalDensity.current
+    val safeInsets = WindowInsets.safeDrawing
+    val insetTop = with(density) { safeInsets.getTop(this).toDp() }
+    val insetBottom = with(density) { safeInsets.getBottom(this).toDp() }
+    // Dialog often measures with unbounded height; pin Surface to the real viewport so weight(1f) works.
+    val dialogMaxHeight = (configuration.screenHeightDp.dp - insetTop - insetBottom - 32.dp)
+        .coerceAtLeast(320.dp)
 
     Dialog(
         onDismissRequest = {
             if (initialProfile?.isInitialSetupDone == true) onDismiss()
         },
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = true
+        )
     ) {
         Surface(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(16.dp),
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 16.dp)
+                .heightIn(max = dialogMaxHeight)
+                .height(dialogMaxHeight),
             shape = RoundedCornerShape(24.dp),
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 6.dp
@@ -128,20 +162,27 @@ fun OnboardingSetupDialog(
                     .fillMaxSize()
                     .padding(20.dp)
             ) {
-                // Header & Progress Indicator
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "BabyCare Live Setup 🍼",
-                        style = MaterialTheme.typography.titleLarge.copy(
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 20.sp
-                        ),
-                        color = MaterialTheme.colorScheme.primary
-                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "BabyCare Live Setup",
+                            style = MaterialTheme.typography.titleLarge.copy(
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 20.sp
+                            ),
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = stepTitles.getOrElse(currentStep) { "" },
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
 
                     if (initialProfile?.isInitialSetupDone == true) {
                         IconButton(onClick = onDismiss) {
@@ -165,7 +206,6 @@ fun OnboardingSetupDialog(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Progress Bar
                 LinearProgressIndicator(
                     progress = { (currentStep + 1) / 3f },
                     modifier = Modifier
@@ -178,44 +218,36 @@ fun OnboardingSetupDialog(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Content View for Steps
                 Box(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
                 ) {
                     AnimatedContent(
                         targetState = currentStep,
                         transitionSpec = { fadeIn() togetherWith fadeOut() },
+                        modifier = Modifier.fillMaxSize(),
                         label = "StepTransition"
                     ) { step ->
                         when (step) {
                             0 -> StepPermissionsContent(
-                                context = context,
                                 hasNotificationPermission = hasNotificationPermission,
                                 onRequestNotification = {
                                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                        if (hasNotificationPermission) return@StepPermissionsContent
                                         notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                                    } else {
-                                        hasNotificationPermission = true
+                                    } else if (!checkNotificationPermissionStatus(context)) {
+                                        openNotificationSettings(context)
                                     }
                                 },
                                 hasBackgroundRunAllowed = hasBackgroundRunAllowed,
                                 onToggleBackgroundRun = {
-                                    hasBackgroundRunAllowed = true
-                                    try {
-                                        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                                            data = Uri.fromParts("package", context.packageName, null)
-                                        }
-                                        context.startActivity(intent)
-                                    } catch (e: Exception) {
-                                        Toast.makeText(context, "Opened App Info for background settings", Toast.LENGTH_SHORT).show()
-                                    }
+                                    openBatteryOptimizationSettings(context)
                                 },
                                 hasSleepLockConfigured = hasSleepLockConfigured,
                                 onConfigureSleepLock = {
-                                    hasSleepLockConfigured = true
-                                    Toast.makeText(context, "Wake lock permission enabled for alarm wakeup ⏰", Toast.LENGTH_SHORT).show()
+                                    openExactAlarmSettings(context)
                                 }
                             )
 
@@ -223,7 +255,13 @@ fun OnboardingSetupDialog(
                                 caregiverRole = caregiverRole,
                                 onRoleSelected = { role ->
                                     caregiverRole = role
-                                    if (caregiverName.isBlank() || caregiverName == "Mom" || caregiverName == "Dad") {
+                                    if (caregiverName.isBlank() ||
+                                        caregiverName == "Mom" ||
+                                        caregiverName == "Dad" ||
+                                        caregiverName == "Grandparent" ||
+                                        caregiverName == "Nanny" ||
+                                        caregiverName == "Other"
+                                    ) {
                                         caregiverName = role
                                     }
                                 },
@@ -257,26 +295,24 @@ fun OnboardingSetupDialog(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Bottom Navigation Buttons
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     if (currentStep > 0) {
                         OutlinedButton(
                             onClick = { currentStep-- },
-                            shape = RoundedCornerShape(12.dp),
+                            shape = RoundedCornerShape(14.dp),
                             modifier = Modifier
-                                .height(50.dp)
+                                .weight(1f)
+                                .height(Dimens.SetupNavButtonHeight)
                                 .testTag("setup_back_btn")
                         ) {
                             Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Back", fontWeight = FontWeight.Bold)
+                            Text("Back", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                         }
-                    } else {
-                        Spacer(modifier = Modifier.width(1.dp))
                     }
 
                     Button(
@@ -284,7 +320,6 @@ fun OnboardingSetupDialog(
                             if (currentStep < 2) {
                                 currentStep++
                             } else {
-                                // Final Save
                                 val finalBabyName = babyNameText.ifBlank { "Your Baby" }
                                 val weightKg = weightText.toDoubleOrNull() ?: 3.5
                                 val heightCm = heightText.toDoubleOrNull() ?: 50.0
@@ -308,18 +343,19 @@ fun OnboardingSetupDialog(
                                 onCompleteSetup(updatedProfile, weightKg, heightCm)
                             }
                         },
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RoundedCornerShape(14.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.primary
                         ),
                         modifier = Modifier
-                            .height(50.dp)
+                            .weight(if (currentStep > 0) 1.4f else 1f)
+                            .height(Dimens.SetupNavButtonHeight)
                             .testTag("setup_next_btn")
                     ) {
                         Text(
-                            text = if (currentStep == 2) "Complete Setup & Launch 🚀" else "Next Step ➔",
+                            text = if (currentStep == 2) "Finish setup" else "Next",
                             fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp
+                            fontSize = 16.sp
                         )
                     }
                 }
@@ -330,7 +366,6 @@ fun OnboardingSetupDialog(
 
 @Composable
 private fun StepPermissionsContent(
-    context: Context,
     hasNotificationPermission: Boolean,
     onRequestNotification: () -> Unit,
     hasBackgroundRunAllowed: Boolean,
@@ -340,53 +375,57 @@ private fun StepPermissionsContent(
 ) {
     Column(
         modifier = Modifier
-            .fillMaxSize()
+            .fillMaxWidth()
             .verticalScroll(rememberScrollState())
+            .padding(bottom = 8.dp)
     ) {
         Text(
-            text = "System Access & Permissions 🔐",
+            text = "Permissions",
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
             fontSize = 18.sp
         )
         Text(
-            text = "BabyCare requires deep-level access to ensure urgent feeding, nap, and medication alarms trigger reliably even when your device is asleep.",
+            text = "Turn on these settings so feeding, nap, and medicine alerts still work when the phone is asleep.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Card 1: Notification Permission
         PermissionCard(
-            title = "1. Notification Permissions 🔔",
-            description = "Sends real-time alerts when feeding windows open or sleep timers elapse.",
+            title = "1. Notifications",
+            description = "Alerts when feeding windows open or sleep timers end.",
             isGranted = hasNotificationPermission,
-            actionText = if (hasNotificationPermission) "Allowed 🟢" else "Enable Notifications",
+            actionText = if (hasNotificationPermission) "Allowed" else "Enable notifications",
+            settingsHint = "Opens: App notification settings",
+            howToFind = "Settings → Apps → BabyCare Live → Notifications",
             onAction = onRequestNotification,
             testTag = "perm_notification_btn"
         )
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Card 2: Background Run Permission
         PermissionCard(
-            title = "2. Background Activity Permission ⚡",
-            description = "Allows BabyCare background alarms to run continuously without battery optimization shutdowns.",
+            title = "2. Background activity",
+            description = "Lets alarms keep running without battery optimization shutting them down.",
             isGranted = hasBackgroundRunAllowed,
-            actionText = if (hasBackgroundRunAllowed) "Configured 🟢" else "Configure Background Access",
+            actionText = if (hasBackgroundRunAllowed) "Configured" else "Allow unrestricted battery",
+            settingsHint = "Opens: App battery settings",
+            howToFind = "Settings → Apps → BabyCare Live → Battery → Unrestricted",
             onAction = onToggleBackgroundRun,
             testTag = "perm_background_btn"
         )
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Card 3: Sleep Lock / Wake Lock Permission
         PermissionCard(
-            title = "3. Sleep Lock & Wake Alarm Access ⏰",
-            description = "Ensures device wake locks activate loud alerts during sleep hours.",
+            title = "3. Alarms & reminders",
+            description = "Allows exact wake alarms so sleep and feed reminders fire on time.",
             isGranted = hasSleepLockConfigured,
-            actionText = "Active 🟢",
+            actionText = if (hasSleepLockConfigured) "Allowed" else "Allow alarms & reminders",
+            settingsHint = "Opens: Alarms & reminders",
+            howToFind = "Settings → Apps → BabyCare Live → Alarms & reminders",
             onAction = onConfigureSleepLock,
             testTag = "perm_sleeplock_btn"
         )
@@ -399,6 +438,8 @@ private fun PermissionCard(
     description: String,
     isGranted: Boolean,
     actionText: String,
+    settingsHint: String,
+    howToFind: String,
     onAction: () -> Unit,
     testTag: String
 ) {
@@ -439,24 +480,39 @@ private fun PermissionCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
+            if (!isGranted) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = settingsHint,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    text = "If that screen does not open: $howToFind",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
             Spacer(modifier = Modifier.height(10.dp))
 
             Button(
                 onClick = onAction,
                 enabled = !isGranted,
-                shape = RoundedCornerShape(10.dp),
+                shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = if (isGranted) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.primary
                 ),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(44.dp)
+                    .height(Dimens.MinTouchTarget)
                     .testTag(testTag)
             ) {
                 Text(
                     text = actionText,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp,
+                    fontSize = 14.sp,
                     color = if (isGranted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onPrimary
                 )
             }
@@ -473,17 +529,18 @@ private fun StepCaregiverIdentityContent(
 ) {
     Column(
         modifier = Modifier
-            .fillMaxSize()
+            .fillMaxWidth()
             .verticalScroll(rememberScrollState())
+            .padding(bottom = 8.dp)
     ) {
         Text(
-            text = "Who Are You? 👤",
+            text = "Your profile",
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
             fontSize = 18.sp
         )
         Text(
-            text = "Select your primary role to personalize co-parenting logs, voice reports, and caregiver badges.",
+            text = "Choose your role so logs and caregiver badges show the right person.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -491,14 +548,14 @@ private fun StepCaregiverIdentityContent(
         Spacer(modifier = Modifier.height(16.dp))
 
         val roles = listOf(
-            Triple("Mom", "👩", "Primary Mother Profile"),
-            Triple("Dad", "👨", "Primary Father Profile"),
-            Triple("Grandparent", "👵", "Grandmother or Grandfather"),
-            Triple("Nanny", "🍼", "Nanny or Babysitter"),
-            Triple("Other", "👤", "Family relative or Guardian")
+            Triple("Mom", "Mom", "Primary mother"),
+            Triple("Dad", "Dad", "Primary father"),
+            Triple("Grandparent", "GP", "Grandmother or grandfather"),
+            Triple("Nanny", "Nanny", "Nanny or babysitter"),
+            Triple("Other", "Other", "Family or guardian")
         )
 
-        roles.forEach { (role, emoji, subtitle) ->
+        roles.forEach { (role, shortLabel, subtitle) ->
             val isSelected = caregiverRole == role
             Card(
                 modifier = Modifier
@@ -508,20 +565,36 @@ private fun StepCaregiverIdentityContent(
                     .testTag("role_chip_$role"),
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(
-                    containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
+                    containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer
+                    else MaterialTheme.colorScheme.surfaceVariant
                 ),
-                border = if (isSelected) androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null
+                border = if (isSelected) {
+                    androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+                } else null
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(14.dp),
+                        .heightIn(min = Dimens.SecondaryActionMinHeight)
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = emoji,
-                        fontSize = 28.sp
-                    )
+                    Surface(
+                        shape = CircleShape,
+                        color = if (isSelected) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+                        modifier = Modifier.size(44.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                            Text(
+                                text = shortLabel.take(1),
+                                fontWeight = FontWeight.Bold,
+                                color = if (isSelected) MaterialTheme.colorScheme.onPrimary
+                                else MaterialTheme.colorScheme.onSurface,
+                                fontSize = 18.sp
+                            )
+                        }
+                    }
                     Spacer(modifier = Modifier.width(14.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
@@ -549,7 +622,7 @@ private fun StepCaregiverIdentityContent(
         OutlinedTextField(
             value = caregiverName,
             onValueChange = onNameChanged,
-            label = { Text("Your Display Name (e.g. Sarah, David)") },
+            label = { Text("Your display name") },
             singleLine = true,
             modifier = Modifier
                 .fillMaxWidth()
@@ -580,31 +653,33 @@ private fun StepBabyDetailsContent(
     onNapIntervalChanged: (String) -> Unit,
     dateFormatter: SimpleDateFormat
 ) {
+    var showMoreDetails by remember { mutableStateOf(false) }
+
     Column(
         modifier = Modifier
-            .fillMaxSize()
+            .fillMaxWidth()
             .verticalScroll(rememberScrollState())
+            .padding(bottom = 8.dp)
     ) {
         Text(
-            text = "Baby Details & Birth Stats 👶",
+            text = "Baby profile",
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
             fontSize = 18.sp
         )
         Text(
-            text = "Enter your baby's birth details. You can easily edit or change these anytime in settings.",
+            text = "A few basics to get started. You can change these anytime later.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
         Spacer(modifier = Modifier.height(14.dp))
 
-        // Baby Name
         OutlinedTextField(
             value = babyNameText,
             onValueChange = onBabyNameChanged,
-            label = { Text("Baby's Name (e.g. Liam, Maya, Noah)") },
-            supportingText = { Text("*(Can be changed anytime later in settings)") },
+            label = { Text("Baby's name") },
+            supportingText = { Text("Can be changed later in Family settings") },
             singleLine = true,
             modifier = Modifier
                 .fillMaxWidth()
@@ -614,7 +689,6 @@ private fun StepBabyDetailsContent(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Gender Selection
         Text(
             text = "Gender",
             style = MaterialTheme.typography.labelLarge,
@@ -628,152 +702,300 @@ private fun StepBabyDetailsContent(
                 FilterChip(
                     selected = selectedGender == gender,
                     onClick = { onGenderSelected(gender) },
-                    label = { Text(gender) },
-                    modifier = Modifier.testTag("gender_chip_$gender")
+                    label = { Text(gender, fontSize = 14.sp) },
+                    modifier = Modifier
+                        .heightIn(min = Dimens.MinTouchTarget)
+                        .testTag("gender_chip_$gender")
                 )
             }
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(14.dp))
 
-        // Date & Time of Birth Buttons
+        Text(
+            text = "Date & time of birth",
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            // Date Picker Button
-            Card(
+            Surface(
+                onClick = {
+                    val year = birthDateCalendar.get(Calendar.YEAR)
+                    val month = birthDateCalendar.get(Calendar.MONTH)
+                    val day = birthDateCalendar.get(Calendar.DAY_OF_MONTH)
+                    DatePickerDialog(context, { _, y, m, d ->
+                        val newCal = Calendar.getInstance().apply {
+                            timeInMillis = birthDateCalendar.timeInMillis
+                            set(Calendar.YEAR, y)
+                            set(Calendar.MONTH, m)
+                            set(Calendar.DAY_OF_MONTH, d)
+                        }
+                        onBirthDateSelected(newCal)
+                    }, year, month, day).show()
+                },
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f),
                 modifier = Modifier
                     .weight(1f)
-                    .clickable {
-                        val year = birthDateCalendar.get(Calendar.YEAR)
-                        val month = birthDateCalendar.get(Calendar.MONTH)
-                        val day = birthDateCalendar.get(Calendar.DAY_OF_MONTH)
-                        DatePickerDialog(context, { _, y, m, d ->
-                            val newCal = Calendar.getInstance().apply {
-                                set(y, m, d)
-                            }
-                            onBirthDateSelected(newCal)
-                        }, year, month, day).show()
-                    }
-                    .testTag("pick_birth_date_btn"),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                    .heightIn(min = Dimens.PrimaryActionHeight)
+                    .testTag("pick_birth_date_btn")
             ) {
-                Column(modifier = Modifier.padding(12.dp)) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.Center
+                ) {
                     Text(
-                        text = "Date of Birth 📅",
-                        fontSize = 11.sp,
+                        text = "Date",
+                        fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
                     )
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
                     Text(
                         text = dateFormatter.format(birthDateCalendar.time),
                         fontWeight = FontWeight.Bold,
-                        fontSize = 13.sp
+                        fontSize = 15.sp
                     )
                 }
             }
 
-            // Time Picker Button
-            Card(
+            Surface(
+                onClick = {
+                    val parsed = parseBirthTime(birthTimeText)
+                    TimePickerDialog(context, { _, h, m ->
+                        val amPm = if (h >= 12) "PM" else "AM"
+                        val hour12 = if (h % 12 == 0) 12 else h % 12
+                        val formattedTime =
+                            String.format(Locale.getDefault(), "%d:%02d %s", hour12, m, amPm)
+                        onBirthTimeSelected(formattedTime)
+                    }, parsed.first, parsed.second, false).show()
+                },
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f),
                 modifier = Modifier
                     .weight(1f)
-                    .clickable {
-                        val hour = birthDateCalendar.get(Calendar.HOUR_OF_DAY)
-                        val minute = birthDateCalendar.get(Calendar.MINUTE)
-                        TimePickerDialog(context, { _, h, m ->
-                            val amPm = if (h >= 12) "PM" else "AM"
-                            val hour12 = if (h % 12 == 0) 12 else h % 12
-                            val formattedTime = String.format(Locale.getDefault(), "%02d:%02d %s", hour12, m, amPm)
-                            onBirthTimeSelected(formattedTime)
-                        }, hour, minute, false).show()
-                    }
-                    .testTag("pick_birth_time_btn"),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                    .heightIn(min = Dimens.PrimaryActionHeight)
+                    .testTag("pick_birth_time_btn")
             ) {
-                Column(modifier = Modifier.padding(12.dp)) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.Center
+                ) {
                     Text(
-                        text = "Time of Birth ⏰",
-                        fontSize = 11.sp,
+                        text = "Time",
+                        fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
                     )
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
                     Text(
                         text = birthTimeText,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 13.sp
+                        fontSize = 15.sp
                     )
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(14.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
-        // Initial Weight & Height
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        TextButton(
+            onClick = { showMoreDetails = !showMoreDetails },
+            modifier = Modifier.testTag("more_baby_details_btn")
         ) {
-            OutlinedTextField(
-                value = weightText,
-                onValueChange = onWeightChanged,
-                label = { Text("Weight (kg)") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                singleLine = true,
-                modifier = Modifier
-                    .weight(1f)
-                    .testTag("baby_weight_input"),
-                shape = RoundedCornerShape(12.dp)
+            Icon(
+                imageVector = if (showMoreDetails) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                contentDescription = null
             )
-
-            OutlinedTextField(
-                value = heightText,
-                onValueChange = onHeightChanged,
-                label = { Text("Height/Length (cm)") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                singleLine = true,
-                modifier = Modifier
-                    .weight(1f)
-                    .testTag("baby_height_input"),
-                shape = RoundedCornerShape(12.dp)
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = if (showMoreDetails) "Hide optional details" else "More details (optional)",
+                fontWeight = FontWeight.SemiBold
             )
         }
 
-        Spacer(modifier = Modifier.height(14.dp))
+        AnimatedVisibility(visible = showMoreDetails) {
+            Column {
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    OutlinedTextField(
+                        value = weightText,
+                        onValueChange = onWeightChanged,
+                        label = { Text("Weight (kg)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("baby_weight_input"),
+                        shape = RoundedCornerShape(12.dp)
+                    )
 
-        // Feeding & Nap Routine Targets
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            OutlinedTextField(
-                value = feedIntervalHoursText,
-                onValueChange = onFeedIntervalChanged,
-                label = { Text("Feed Goal (hrs)") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                singleLine = true,
-                modifier = Modifier
-                    .weight(1f)
-                    .testTag("feed_goal_input"),
-                shape = RoundedCornerShape(12.dp)
-            )
+                    OutlinedTextField(
+                        value = heightText,
+                        onValueChange = onHeightChanged,
+                        label = { Text("Length (cm)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("baby_height_input"),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                }
 
-            OutlinedTextField(
-                value = napIntervalHoursText,
-                onValueChange = onNapIntervalChanged,
-                label = { Text("Wake Window (hrs)") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                singleLine = true,
-                modifier = Modifier
-                    .weight(1f)
-                    .testTag("wake_window_input"),
-                shape = RoundedCornerShape(12.dp)
-            )
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    OutlinedTextField(
+                        value = feedIntervalHoursText,
+                        onValueChange = onFeedIntervalChanged,
+                        label = { Text("Feed goal (hrs)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("feed_goal_input"),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+
+                    OutlinedTextField(
+                        value = napIntervalHoursText,
+                        onValueChange = onNapIntervalChanged,
+                        label = { Text("Wake window (hrs)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("wake_window_input"),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                }
+            }
         }
+    }
+}
+
+private fun parseBirthTime(birthTimeText: String): Pair<Int, Int> {
+    return try {
+        val parts = birthTimeText.trim().split(" ")
+        val timePart = parts[0]
+        val amPm = parts.getOrNull(1)?.uppercase(Locale.getDefault()) ?: "AM"
+        val hm = timePart.split(":")
+        var hour = hm[0].toInt()
+        val minute = hm.getOrNull(1)?.toIntOrNull() ?: 0
+        if (amPm == "PM" && hour < 12) hour += 12
+        if (amPm == "AM" && hour == 12) hour = 0
+        hour to minute
+    } catch (_: Exception) {
+        11 to 12
+    }
+}
+
+private fun openAppInfoSettings(context: Context) {
+    try {
+        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+            data = Uri.fromParts("package", context.packageName, null)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(intent)
+    } catch (_: Exception) {
+        Toast.makeText(
+            context,
+            "Open Settings → Apps → BabyCare Live",
+            Toast.LENGTH_LONG
+        ).show()
+    }
+}
+
+private fun openNotificationSettings(context: Context) {
+    try {
+        val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+            }
+        } else {
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = Uri.fromParts("package", context.packageName, null)
+            }
+        }
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(intent)
+    } catch (_: Exception) {
+        Toast.makeText(
+            context,
+            "Settings → Apps → BabyCare Live → Notifications",
+            Toast.LENGTH_LONG
+        ).show()
+        openAppInfoSettings(context)
+    }
+}
+
+private fun openBatteryOptimizationSettings(context: Context) {
+    try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                data = Uri.parse("package:${context.packageName}")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+            return
+        }
+    } catch (_: Exception) {
+        // fall through
+    }
+    try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+            Toast.makeText(
+                context,
+                "Find BabyCare Live and set Battery to Unrestricted",
+                Toast.LENGTH_LONG
+            ).show()
+            return
+        }
+    } catch (_: Exception) {
+        // fall through
+    }
+    Toast.makeText(
+        context,
+        "Settings → Apps → BabyCare Live → Battery → Unrestricted",
+        Toast.LENGTH_LONG
+    ).show()
+    openAppInfoSettings(context)
+}
+
+private fun openExactAlarmSettings(context: Context) {
+    try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val intent = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+                data = Uri.parse("package:${context.packageName}")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+            return
+        }
+        Toast.makeText(context, "Exact alarms are already available on this Android version", Toast.LENGTH_SHORT).show()
+    } catch (_: Exception) {
+        Toast.makeText(
+            context,
+            "Settings → Apps → BabyCare Live → Alarms & reminders",
+            Toast.LENGTH_LONG
+        ).show()
+        openAppInfoSettings(context)
     }
 }
 
@@ -800,9 +1022,6 @@ private fun checkSleepLockPermissionStatus(context: Context): Boolean {
     val canSchedule = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
         alarmManager?.canScheduleExactAlarms() ?: true
     } else true
-    val wakeLockGranted = ContextCompat.checkSelfPermission(
-        context,
-        Manifest.permission.WAKE_LOCK
-    ) == PackageManager.PERMISSION_GRANTED
-    return canSchedule && wakeLockGranted
+    // WAKE_LOCK is a normal permission granted at install; exact-alarm is the user-facing gate.
+    return canSchedule
 }

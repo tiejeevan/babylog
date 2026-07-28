@@ -1,26 +1,34 @@
 package com.example.ui.dialogs
 
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import com.example.data.model.BabyProfile
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import com.example.data.model.BabyProfile
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TimePicker
+import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -34,13 +42,21 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.model.ActivityLog
 import com.example.data.model.ActivityTypes
+import com.example.engine.QuickActionPrefs
+import com.example.ui.theme.CustomActionColor
 import com.example.ui.theme.DiaperColor
+import com.example.ui.theme.FavoriteActionColor
 import com.example.ui.theme.FeedingColor
 import com.example.ui.theme.HealthColor
 import com.example.ui.theme.MedicineColor
 import com.example.ui.theme.PumpingColor
 import com.example.ui.theme.SleepColor
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
 
 @Composable
 fun LogBottleDialog(
@@ -204,6 +220,12 @@ fun LogMedicineDialog(
         },
         text = {
             Column(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = "Saves a dose to the timeline. For repeating reminders, use More → Reminders & Alarms.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(8.dp))
                 OutlinedTextField(
                     value = nameText,
                     onValueChange = { nameText = it },
@@ -244,6 +266,181 @@ fun LogMedicineDialog(
         dismissButton = {
             TextButton(onClick = onDismiss) {
                 Text("Cancel")
+            }
+        }
+    )
+}
+
+private val customActionSuggestions = listOf(
+    "Crying",
+    "Outside / sun",
+    "Playtime",
+    "Fussy",
+    "Car ride",
+    "Visitor"
+)
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun LogCustomActionDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (title: String, notes: String) -> Unit
+) {
+    var titleText by remember { mutableStateOf("") }
+    var notesText by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "Log custom action",
+                fontWeight = FontWeight.Bold,
+                color = CustomActionColor
+            )
+        },
+        text = {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = "Anything misc — crying, outdoors, play…",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    customActionSuggestions.forEach { suggestion ->
+                        FilterChip(
+                            selected = titleText.equals(suggestion, ignoreCase = true),
+                            onClick = { titleText = suggestion },
+                            label = { Text(suggestion, fontSize = 12.sp) }
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = titleText,
+                    onValueChange = { titleText = it },
+                    label = { Text("What happened?") },
+                    placeholder = { Text("e.g. Went outside for sun") },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("custom_action_title"),
+                    shape = RoundedCornerShape(12.dp),
+                    singleLine = true
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = notesText,
+                    onValueChange = { notesText = it },
+                    label = { Text("Notes (optional)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val title = titleText.trim()
+                    if (title.isNotEmpty()) onConfirm(title, notesText.trim())
+                },
+                enabled = titleText.trim().isNotEmpty(),
+                colors = ButtonDefaults.buttonColors(containerColor = CustomActionColor),
+                modifier = Modifier.testTag("custom_action_save")
+            ) {
+                Text("Save", fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+@Composable
+fun SetFavoriteActionDialog(
+    currentType: String?,
+    onDismiss: () -> Unit,
+    onConfirm: (type: String, label: String) -> Unit,
+    onClear: () -> Unit
+) {
+    val options = listOf(
+        ActivityTypes.BOTTLE to "Bottle",
+        ActivityTypes.BREASTFEEDING to "Nurse",
+        ActivityTypes.SLEEP to "Sleep",
+        ActivityTypes.DIAPER to "Diaper",
+        ActivityTypes.PUMPING to "Pumping",
+        ActivityTypes.MEDICINE to "Medicine",
+        ActivityTypes.TEMPERATURE to "Temp",
+        ActivityTypes.GROWTH to "Growth",
+        ActivityTypes.BATH to "Bath",
+        ActivityTypes.TUMMY_TIME to "Tummy Time",
+        ActivityTypes.MILESTONE to "Milestone"
+    )
+    var selectedType by remember { mutableStateOf(currentType) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "Choose favorite action",
+                fontWeight = FontWeight.Bold,
+                color = FavoriteActionColor
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    text = "This shows as a big quick-action button on the dashboard.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                options.forEach { (type, label) ->
+                    FilterChip(
+                        selected = selectedType == type,
+                        onClick = { selectedType = type },
+                        label = { Text(label) },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val type = selectedType ?: return@Button
+                    val label = options.firstOrNull { it.first == type }?.second
+                        ?: QuickActionPrefs.defaultLabelForType(type)
+                    onConfirm(type, label)
+                },
+                enabled = selectedType != null,
+                colors = ButtonDefaults.buttonColors(containerColor = FavoriteActionColor),
+                modifier = Modifier.testTag("favorite_action_save")
+            ) {
+                Text("Save", fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            Row {
+                if (currentType != null) {
+                    TextButton(onClick = onClear) {
+                        Text("Clear")
+                    }
+                }
+                TextButton(onClick = onDismiss) {
+                    Text("Cancel")
+                }
             }
         }
     )
@@ -688,4 +885,311 @@ fun SetupBabyProfileDialog(
             }
         }
     )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun EditActivityLogDialog(
+    log: ActivityLog,
+    onDismiss: () -> Unit,
+    onConfirm: (ActivityLog) -> Unit
+) {
+    var notesText by remember { mutableStateOf(log.notes) }
+    var volumeText by remember { mutableStateOf(if (log.volumeMl > 0) log.volumeMl.toString() else "") }
+    var milkType by remember { mutableStateOf(log.milkType ?: "Breast Milk") }
+    var diaperStatus by remember { mutableStateOf(log.diaperStatus ?: "Wet") }
+    var medicineName by remember { mutableStateOf(log.medicineName ?: "") }
+    var dosage by remember { mutableStateOf(log.dosage ?: "") }
+    var tempText by remember { mutableStateOf(if (log.temperatureCelsius > 0) log.temperatureCelsius.toString() else "") }
+    var leftMinText by remember {
+        mutableStateOf(if (log.leftBreastDurationSec > 0) (log.leftBreastDurationSec / 60).toString() else "0")
+    }
+    var rightMinText by remember {
+        mutableStateOf(if (log.rightBreastDurationSec > 0) (log.rightBreastDurationSec / 60).toString() else "0")
+    }
+
+    var startMillis by remember { mutableStateOf(log.startTimeMillis) }
+    var endMillis by remember { mutableStateOf(log.endTimeMillis) }
+    var showStartDatePicker by remember { mutableStateOf(false) }
+    var showStartTimePicker by remember { mutableStateOf(false) }
+    var showEndDatePicker by remember { mutableStateOf(false) }
+    var showEndTimePicker by remember { mutableStateOf(false) }
+
+    val dateFormat = remember { SimpleDateFormat("MMM d, yyyy", Locale.getDefault()) }
+    val timeFormat = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "Edit ${log.activityType.replace('_', ' ').lowercase().replaceFirstChar { it.titlecase(Locale.getDefault()) }}",
+                fontWeight = FontWeight.Bold
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text("Start", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = false,
+                        onClick = { showStartDatePicker = true },
+                        label = { Text(dateFormat.format(Date(startMillis))) }
+                    )
+                    FilterChip(
+                        selected = false,
+                        onClick = { showStartTimePicker = true },
+                        label = { Text(timeFormat.format(Date(startMillis))) }
+                    )
+                }
+
+                if (endMillis != null) {
+                    Text("End", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(
+                            selected = false,
+                            onClick = { showEndDatePicker = true },
+                            label = { Text(dateFormat.format(Date(endMillis!!))) }
+                        )
+                        FilterChip(
+                            selected = false,
+                            onClick = { showEndTimePicker = true },
+                            label = { Text(timeFormat.format(Date(endMillis!!))) }
+                        )
+                    }
+                }
+
+                when (log.activityType) {
+                    ActivityTypes.BOTTLE, ActivityTypes.PUMPING -> {
+                        OutlinedTextField(
+                            value = volumeText,
+                            onValueChange = { volumeText = it },
+                            label = { Text("Volume (ml)") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                        if (log.activityType == ActivityTypes.BOTTLE) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                listOf("Breast Milk", "Formula", "Water").forEach { type ->
+                                    FilterChip(
+                                        selected = milkType == type,
+                                        onClick = { milkType = type },
+                                        label = { Text(type) }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    ActivityTypes.DIAPER -> {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf("Wet", "Dirty", "Both", "Dry").forEach { status ->
+                                FilterChip(
+                                    selected = diaperStatus == status,
+                                    onClick = { diaperStatus = status },
+                                    label = { Text(status) }
+                                )
+                            }
+                        }
+                    }
+                    ActivityTypes.MEDICINE -> {
+                        OutlinedTextField(
+                            value = medicineName,
+                            onValueChange = { medicineName = it },
+                            label = { Text("Medicine name") },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                        OutlinedTextField(
+                            value = dosage,
+                            onValueChange = { dosage = it },
+                            label = { Text("Dosage") },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                    }
+                    ActivityTypes.TEMPERATURE -> {
+                        OutlinedTextField(
+                            value = tempText,
+                            onValueChange = { tempText = it },
+                            label = { Text("Temperature (°C)") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                    }
+                    ActivityTypes.BREASTFEEDING -> {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedTextField(
+                                value = leftMinText,
+                                onValueChange = { leftMinText = it },
+                                label = { Text("Left (min)") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            OutlinedTextField(
+                                value = rightMinText,
+                                onValueChange = { rightMinText = it },
+                                label = { Text("Right (min)") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                        }
+                    }
+                }
+
+                OutlinedTextField(
+                    value = notesText,
+                    onValueChange = { notesText = it },
+                    label = { Text("Notes") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val end = endMillis
+                    val safeEnd = if (end != null && end < startMillis) startMillis else end
+                    val leftSec = (leftMinText.toLongOrNull() ?: 0L) * 60L
+                    val rightSec = (rightMinText.toLongOrNull() ?: 0L) * 60L
+                    onConfirm(
+                        log.copy(
+                            startTimeMillis = startMillis,
+                            endTimeMillis = safeEnd,
+                            notes = notesText,
+                            volumeMl = volumeText.toIntOrNull() ?: log.volumeMl,
+                            milkType = milkType,
+                            diaperStatus = diaperStatus,
+                            medicineName = medicineName.ifBlank { null },
+                            dosage = dosage.ifBlank { null },
+                            temperatureCelsius = tempText.toDoubleOrNull() ?: log.temperatureCelsius,
+                            leftBreastDurationSec = leftSec,
+                            rightBreastDurationSec = rightSec
+                        )
+                    )
+                }
+            ) {
+                Text("Save", fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
+
+    if (showStartDatePicker) {
+        val state = rememberDatePickerState(initialSelectedDateMillis = startMillis)
+        DatePickerDialog(
+            onDismissRequest = { showStartDatePicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    state.selectedDateMillis?.let { picked ->
+                        startMillis = mergeDateKeepingTime(picked, startMillis)
+                    }
+                    showStartDatePicker = false
+                }) { Text("OK") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showStartDatePicker = false }) { Text("Cancel") }
+            }
+        ) {
+            DatePicker(state = state)
+        }
+    }
+
+    if (showStartTimePicker) {
+        val cal = Calendar.getInstance().apply { timeInMillis = startMillis }
+        val state = rememberTimePickerState(
+            initialHour = cal.get(Calendar.HOUR_OF_DAY),
+            initialMinute = cal.get(Calendar.MINUTE),
+            is24Hour = false
+        )
+        AlertDialog(
+            onDismissRequest = { showStartTimePicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    startMillis = mergeTimeKeepingDate(startMillis, state.hour, state.minute)
+                    showStartTimePicker = false
+                }) { Text("OK") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showStartTimePicker = false }) { Text("Cancel") }
+            },
+            text = { TimePicker(state = state) }
+        )
+    }
+
+    if (showEndDatePicker && endMillis != null) {
+        val state = rememberDatePickerState(initialSelectedDateMillis = endMillis)
+        DatePickerDialog(
+            onDismissRequest = { showEndDatePicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    state.selectedDateMillis?.let { picked ->
+                        endMillis = mergeDateKeepingTime(picked, endMillis!!)
+                    }
+                    showEndDatePicker = false
+                }) { Text("OK") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEndDatePicker = false }) { Text("Cancel") }
+            }
+        ) {
+            DatePicker(state = state)
+        }
+    }
+
+    if (showEndTimePicker && endMillis != null) {
+        val cal = Calendar.getInstance().apply { timeInMillis = endMillis!! }
+        val state = rememberTimePickerState(
+            initialHour = cal.get(Calendar.HOUR_OF_DAY),
+            initialMinute = cal.get(Calendar.MINUTE),
+            is24Hour = false
+        )
+        AlertDialog(
+            onDismissRequest = { showEndTimePicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    endMillis = mergeTimeKeepingDate(endMillis!!, state.hour, state.minute)
+                    showEndTimePicker = false
+                }) { Text("OK") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEndTimePicker = false }) { Text("Cancel") }
+            },
+            text = { TimePicker(state = state) }
+        )
+    }
+}
+
+private fun mergeDateKeepingTime(dateMillis: Long, timeSourceMillis: Long): Long {
+    val dateCal = Calendar.getInstance().apply { timeInMillis = dateMillis }
+    val timeCal = Calendar.getInstance().apply { timeInMillis = timeSourceMillis }
+    return Calendar.getInstance().apply {
+        set(Calendar.YEAR, dateCal.get(Calendar.YEAR))
+        set(Calendar.MONTH, dateCal.get(Calendar.MONTH))
+        set(Calendar.DAY_OF_MONTH, dateCal.get(Calendar.DAY_OF_MONTH))
+        set(Calendar.HOUR_OF_DAY, timeCal.get(Calendar.HOUR_OF_DAY))
+        set(Calendar.MINUTE, timeCal.get(Calendar.MINUTE))
+        set(Calendar.SECOND, timeCal.get(Calendar.SECOND))
+        set(Calendar.MILLISECOND, 0)
+    }.timeInMillis
+}
+
+private fun mergeTimeKeepingDate(dateSourceMillis: Long, hour: Int, minute: Int): Long {
+    return Calendar.getInstance().apply {
+        timeInMillis = dateSourceMillis
+        set(Calendar.HOUR_OF_DAY, hour)
+        set(Calendar.MINUTE, minute)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }.timeInMillis
 }

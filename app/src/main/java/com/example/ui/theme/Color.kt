@@ -30,6 +30,8 @@ val MedicineColor = Color(0xFFEC407A)
 val HealthColor = Color(0xFFAB47BC)
 val TummyTimeColor = Color(0xFF66BB6A)
 val MilestoneColor = Color(0xFFFFA726)
+val CustomActionColor = Color(0xFF78909C)
+val FavoriteActionColor = Color(0xFFFFB300)
 
 // Dark Palette
 val BabyCoralPrimaryDark = Color(0xFFFFB5A0)

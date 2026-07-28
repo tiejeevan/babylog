@@ -1,6 +1,5 @@
 package com.example.notification
 
-import android.app.AlarmManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -9,14 +8,147 @@ import android.content.Intent
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import com.example.MainActivity
+import com.example.data.model.CareCheckSettings
+import com.example.engine.ReminderKind
 
 object BabyNotificationManager {
 
     const val CHANNEL_TIMERS = "channel_timers"
     const val CHANNEL_REMINDERS = "channel_reminders"
     const val CHANNEL_HEALTH = "channel_health"
+    /** Dedicated phone-alarm channel (USAGE_ALARM sound, bypass DND). */
+    const val CHANNEL_PHONE_ALARMS = "channel_phone_alarms_v1"
+    const val CHANNEL_MESSAGES = "channel_care_messages"
 
-    private const val NOTIFICATION_ID_BASE = 1000
+    const val EXTRA_OPEN_PEER_CHAT = "open_peer_chat"
+    const val NOTIFICATION_ID_PEER_CHAT = 4300
+
+    private data class PeerChatLine(
+        val senderName: String,
+        val text: String,
+        val timestampMillis: Long
+    )
+
+    private val peerChatLines = mutableListOf<PeerChatLine>()
+    private const val MAX_PEER_CHAT_LINES = 8
+
+    const val REQUEST_FEED = 2001
+    const val REQUEST_SLEEP = 2002
+    const val REQUEST_TIMER = 2003
+    const val REQUEST_DIAPER = 2004
+    const val REQUEST_BABY_CHECK = 2006
+    const val REQUEST_NAP_LEGACY = 2002
+    const val REQUEST_MEDICINE_LEGACY = 2005
+    const val REQUEST_MEDICINE_BASE = 4000
+
+    /** Soft reminder PendingIntent codes (alarm uses REQUEST_* above). */
+    const val REQUEST_FEED_REMINDER = 2011
+    const val REQUEST_DIAPER_REMINDER = 2014
+    const val REQUEST_BABY_CHECK_REMINDER = 2016
+
+    const val REQUEST_SNOOZE_FEED = 3001
+    const val REQUEST_SNOOZE_SLEEP = 3002
+    const val REQUEST_SNOOZE_DIAPER = 3004
+    const val REQUEST_SNOOZE_BABY_CHECK = 3006
+    /** Per-medicine snooze PendingIntent codes: base + alarmId (1..999). */
+    const val REQUEST_SNOOZE_MEDICINE_BASE = 6000
+
+    const val NOTIFICATION_ID_FEED = 2101
+    const val NOTIFICATION_ID_SLEEP = 2102
+    const val NOTIFICATION_ID_DIAPER = 2104
+    const val NOTIFICATION_ID_BABY_CHECK = 2106
+    const val NOTIFICATION_MEDICINE_BASE = 5000
+
+    /** Soft reminder notification IDs (distinct from ringing alarm IDs). */
+    const val NOTIFICATION_ID_FEED_REMINDER = 2111
+    const val NOTIFICATION_ID_DIAPER_REMINDER = 2114
+    const val NOTIFICATION_ID_BABY_CHECK_REMINDER = 2116
+
+    const val EXTRA_REMINDER_TYPE = "reminder_type"
+    const val EXTRA_NOTIFICATION_ID = "notification_id"
+    const val EXTRA_TITLE = "title"
+    const val EXTRA_MESSAGE = "message"
+    const val EXTRA_CHANNEL_ID = "channel_id"
+    const val EXTRA_MEDICINE_ALARM_ID = "medicine_alarm_id"
+    const val EXTRA_STICKY = "sticky"
+    const val EXTRA_DELIVERY_MODE = "delivery_mode"
+    const val EXTRA_PENDING_ALARM_AT = "pending_alarm_at"
+
+    const val DELIVERY_ALARM = "alarm"
+    const val DELIVERY_REMINDER = "reminder"
+
+    const val TYPE_FEED = "FEED"
+    const val TYPE_SLEEP = "SLEEP"
+    const val TYPE_DIAPER = "DIAPER"
+    const val TYPE_BABY_CHECK = "BABY_CHECK"
+    const val TYPE_MEDICINE = "MEDICINE"
+
+    // Legacy aliases for older PendingIntents
+    const val TYPE_NAP = TYPE_SLEEP
+    const val TYPE_FEED_LEGACY = "feed"
+    const val TYPE_NAP_LEGACY = "nap"
+    const val TYPE_DIAPER_LEGACY = "diaper"
+    const val TYPE_MEDICINE_LEGACY = "medicine"
+
+    const val ACTION_BABY_ALARM = "com.example.ACTION_BABY_ALARM"
+    const val ACTION_REMINDER_DONE = "com.example.ACTION_REMINDER_DONE"
+    const val ACTION_REMINDER_SNOOZE = "com.example.ACTION_REMINDER_SNOOZE"
+
+    const val SNOOZE_MS = 10 * 60_000L
+
+    fun medicineRequestCode(alarmId: Long): Int =
+        REQUEST_MEDICINE_BASE + (alarmId.coerceIn(1L, 999L).toInt())
+
+    fun medicineNotificationId(alarmId: Long): Int =
+        NOTIFICATION_MEDICINE_BASE + (alarmId.coerceIn(1L, 999L).toInt())
+
+    fun reminderRequestCode(reminderKind: String): Int? =
+        when (normalizeKind(reminderKind)) {
+            TYPE_FEED -> REQUEST_FEED_REMINDER
+            TYPE_DIAPER -> REQUEST_DIAPER_REMINDER
+            TYPE_BABY_CHECK -> REQUEST_BABY_CHECK_REMINDER
+            else -> null
+        }
+
+    fun alarmRequestCode(reminderKind: String): Int? =
+        when (normalizeKind(reminderKind)) {
+            TYPE_FEED -> REQUEST_FEED
+            TYPE_DIAPER -> REQUEST_DIAPER
+            TYPE_BABY_CHECK -> REQUEST_BABY_CHECK
+            TYPE_SLEEP -> REQUEST_SLEEP
+            else -> null
+        }
+
+    fun reminderNotificationId(reminderKind: String): Int? =
+        when (normalizeKind(reminderKind)) {
+            TYPE_FEED -> NOTIFICATION_ID_FEED_REMINDER
+            TYPE_DIAPER -> NOTIFICATION_ID_DIAPER_REMINDER
+            TYPE_BABY_CHECK -> NOTIFICATION_ID_BABY_CHECK_REMINDER
+            else -> null
+        }
+
+    fun snoozeRequestCode(reminderKind: String, medicineAlarmId: Long = 0L): Int? =
+        when (normalizeKind(reminderKind)) {
+            TYPE_FEED -> REQUEST_SNOOZE_FEED
+            TYPE_SLEEP -> REQUEST_SNOOZE_SLEEP
+            TYPE_DIAPER -> REQUEST_SNOOZE_DIAPER
+            TYPE_BABY_CHECK -> REQUEST_SNOOZE_BABY_CHECK
+            TYPE_MEDICINE -> if (medicineAlarmId > 0L) {
+                REQUEST_SNOOZE_MEDICINE_BASE + medicineAlarmId.coerceIn(1L, 999L).toInt()
+            } else {
+                null
+            }
+            else -> null
+        }
+
+    fun normalizeKind(reminderType: String): String = when (reminderType) {
+        TYPE_FEED, TYPE_FEED_LEGACY -> TYPE_FEED
+        TYPE_SLEEP, TYPE_NAP_LEGACY, "nap" -> TYPE_SLEEP
+        TYPE_DIAPER, TYPE_DIAPER_LEGACY -> TYPE_DIAPER
+        TYPE_BABY_CHECK -> TYPE_BABY_CHECK
+        TYPE_MEDICINE, TYPE_MEDICINE_LEGACY -> TYPE_MEDICINE
+        else -> reminderType.uppercase()
+    }
 
     fun createNotificationChannels(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -34,24 +166,226 @@ object BabyNotificationManager {
 
             val reminderChannel = NotificationChannel(
                 CHANNEL_REMINDERS,
-                "Routine Feeding & Nap Reminders",
+                "Routine Care Reminders",
                 NotificationManager.IMPORTANCE_HIGH
             ).apply {
-                description = "Reminders when baby's target feeding or sleep intervals elapse"
+                description = "Care reminder notifications"
                 enableVibration(true)
+                setBypassDnd(true)
             }
 
             val healthChannel = NotificationChannel(
                 CHANNEL_HEALTH,
                 "Health & Medication Alerts",
-                NotificationManager.IMPORTANCE_DEFAULT
+                NotificationManager.IMPORTANCE_HIGH
             ).apply {
-                description = "Alerts for medication, growth checks, and vaccines"
+                description = "Medicine reminder notifications"
+                enableVibration(true)
+                setBypassDnd(true)
+            }
+
+            val alarmUri = android.media.RingtoneManager.getDefaultUri(
+                android.media.RingtoneManager.TYPE_ALARM
+            )
+            val alarmAttrs = android.media.AudioAttributes.Builder()
+                .setUsage(android.media.AudioAttributes.USAGE_ALARM)
+                .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .build()
+            val phoneAlarmChannel = NotificationChannel(
+                CHANNEL_PHONE_ALARMS,
+                "Phone Alarms",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "Full phone-style alarms for care checks and medicine"
+                enableVibration(true)
+                setBypassDnd(true)
+                setSound(alarmUri, alarmAttrs)
+                lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
+            }
+
+            val messagesChannel = NotificationChannel(
+                CHANNEL_MESSAGES,
+                "Caregiver Messages",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "Incoming Care Sync chat and ping messages"
+                enableVibration(true)
             }
 
             notificationManager.createNotificationChannel(timerChannel)
             notificationManager.createNotificationChannel(reminderChannel)
             notificationManager.createNotificationChannel(healthChannel)
+            notificationManager.createNotificationChannel(phoneAlarmChannel)
+            notificationManager.createNotificationChannel(messagesChannel)
+        }
+    }
+
+    /**
+     * WhatsApp-style stacked messaging notification. Tap opens Care Chat.
+     */
+    fun showPeerMessageNotification(
+        context: Context,
+        senderName: String,
+        text: String,
+        timestampMillis: Long = System.currentTimeMillis()
+    ) {
+        val app = context.applicationContext
+        createNotificationChannels(app)
+
+        synchronized(peerChatLines) {
+            peerChatLines.add(PeerChatLine(senderName, text, timestampMillis))
+            while (peerChatLines.size > MAX_PEER_CHAT_LINES) {
+                peerChatLines.removeAt(0)
+            }
+        }
+
+        val openIntent = Intent(app, MainActivity::class.java).apply {
+            action = Intent.ACTION_VIEW
+            putExtra(EXTRA_OPEN_PEER_CHAT, true)
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val contentPending = PendingIntent.getActivity(
+            app,
+            NOTIFICATION_ID_PEER_CHAT,
+            openIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val user = androidx.core.app.Person.Builder()
+            .setName("You")
+            .build()
+
+        val style = NotificationCompat.MessagingStyle(user)
+            .setConversationTitle("Care Sync")
+        synchronized(peerChatLines) {
+            for (line in peerChatLines) {
+                val person = androidx.core.app.Person.Builder()
+                    .setName(line.senderName)
+                    .setImportant(true)
+                    .build()
+                style.addMessage(line.text, line.timestampMillis, person)
+            }
+        }
+
+        val latest = peerChatLines.lastOrNull()
+        val builder = NotificationCompat.Builder(app, CHANNEL_MESSAGES)
+            .setSmallIcon(android.R.drawable.ic_dialog_email)
+            .setContentTitle(latest?.senderName ?: senderName)
+            .setContentText(latest?.text ?: text)
+            .setStyle(style)
+            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setOnlyAlertOnce(false)
+            .setContentIntent(contentPending)
+            .setVibrate(longArrayOf(0, 180, 80, 180))
+
+        val notificationManager =
+            app.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.notify(NOTIFICATION_ID_PEER_CHAT, builder.build())
+    }
+
+    fun dismissPeerChatNotification(context: Context) {
+        synchronized(peerChatLines) { peerChatLines.clear() }
+        val notificationManager =
+            context.applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.cancel(NOTIFICATION_ID_PEER_CHAT)
+    }
+
+    /**
+     * Rings like a real phone alarm: alarm-stream ringtone + full-screen UI + heads-up.
+     */
+    fun launchPhoneAlarm(
+        context: Context,
+        title: String,
+        message: String,
+        reminderKind: String,
+        notificationId: Int,
+        medicineAlarmId: Long = 0L,
+        playSound: Boolean = true
+    ) {
+        val app = context.applicationContext
+        createNotificationChannels(app)
+        val kind = normalizeKind(reminderKind)
+
+        if (playSound) {
+            AlarmSoundController.start(app)
+        }
+
+        val ringIntent = Intent(app, AlarmRingActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                Intent.FLAG_ACTIVITY_SINGLE_TOP
+            putExtra(EXTRA_TITLE, title)
+            putExtra(EXTRA_MESSAGE, message)
+            putExtra(EXTRA_REMINDER_TYPE, kind)
+            putExtra(EXTRA_NOTIFICATION_ID, notificationId)
+            putExtra(EXTRA_MEDICINE_ALARM_ID, medicineAlarmId)
+            putExtra(EXTRA_CHANNEL_ID, CHANNEL_PHONE_ALARMS)
+        }
+        val fullScreenPending = PendingIntent.getActivity(
+            app,
+            notificationId + 50,
+            ringIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val donePending = actionPendingIntent(
+            context = app,
+            action = ACTION_REMINDER_DONE,
+            reminderType = kind,
+            notificationId = notificationId,
+            requestCode = notificationId + 100,
+            medicineAlarmId = medicineAlarmId,
+            title = title,
+            message = message,
+            channelId = CHANNEL_PHONE_ALARMS
+        )
+        val snoozePending = if (kind != "timer") {
+            actionPendingIntent(
+                context = app,
+                action = ACTION_REMINDER_SNOOZE,
+                reminderType = kind,
+                notificationId = notificationId,
+                requestCode = notificationId + 200,
+                title = title,
+                message = message,
+                channelId = CHANNEL_PHONE_ALARMS,
+                medicineAlarmId = medicineAlarmId
+            )
+        } else {
+            null
+        }
+
+        val dismissLabel = if (kind == TYPE_MEDICINE) "Took it" else "Dismiss"
+        val builder = NotificationCompat.Builder(app, CHANNEL_PHONE_ALARMS)
+            .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
+            .setContentTitle(title)
+            .setContentText(message)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(message))
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setOngoing(true)
+            .setAutoCancel(false)
+            .setOnlyAlertOnce(true)
+            .setContentIntent(fullScreenPending)
+            .setFullScreenIntent(fullScreenPending, true)
+            .setVibrate(longArrayOf(0, 600, 400, 600))
+            .addAction(0, dismissLabel, donePending)
+
+        if (snoozePending != null) {
+            builder.addAction(0, "Snooze 10m", snoozePending)
+        }
+
+        val notificationManager =
+            app.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.notify(notificationId, builder.build())
+
+        try {
+            app.startActivity(ringIntent)
+        } catch (_: Exception) {
+            // Full-screen intent / notification still covers locked devices.
         }
     }
 
@@ -89,82 +423,210 @@ object BabyNotificationManager {
         notificationManager.notify(notificationId, builder.build())
     }
 
-    fun scheduleFeedingAlarm(context: Context, timeInMillis: Long, babyName: String) {
-        scheduleAlarm(
-            context = context,
-            triggerAtMillis = timeInMillis,
-            title = "🍼 Feeding Time for $babyName",
-            message = "Target feeding window reached! Time to give $babyName a nurse or bottle.",
-            requestCode = 2001,
-            channelId = CHANNEL_REMINDERS
-        )
-    }
-
-    fun scheduleNapAlarm(context: Context, timeInMillis: Long, babyName: String) {
-        scheduleAlarm(
-            context = context,
-            triggerAtMillis = timeInMillis,
-            title = "😴 Nap Window for $babyName",
-            message = "Wake window limit reached. Time to put $babyName down for a nap.",
-            requestCode = 2002,
-            channelId = CHANNEL_REMINDERS
-        )
-    }
-
-    fun scheduleTimerCompleteAlarm(context: Context, delaySeconds: Long, activityName: String, babyName: String) {
-        val triggerTime = System.currentTimeMillis() + (delaySeconds * 1000)
-        scheduleAlarm(
-            context = context,
-            triggerAtMillis = triggerTime,
-            title = "⏰ $activityName Timer Done",
-            message = "$activityName session for $babyName has ended!",
-            requestCode = 2003,
-            channelId = CHANNEL_TIMERS
-        )
-    }
-
-    private fun scheduleAlarm(
+    /**
+     * Soft care-check reminder: heads-up notification, no ringtone / full-screen ring.
+     * Dismiss cancels any pending sibling alarm for the same kind.
+     */
+    fun showCareReminderNotification(
         context: Context,
-        triggerAtMillis: Long,
         title: String,
         message: String,
-        requestCode: Int,
-        channelId: String
+        reminderKind: String,
+        notificationId: Int
     ) {
-        if (triggerAtMillis <= System.currentTimeMillis()) return
+        val app = context.applicationContext
+        createNotificationChannels(app)
+        val kind = normalizeKind(reminderKind)
 
-        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-        val intent = Intent(context, BabyAlarmReceiver::class.java).apply {
-            action = "com.example.ACTION_BABY_ALARM"
-            putExtra("title", title)
-            putExtra("message", message)
-            putExtra("channel_id", channelId)
+        val openIntent = Intent(app, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
+        val contentPending = PendingIntent.getActivity(
+            app,
+            notificationId + 10,
+            openIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val donePending = actionPendingIntent(
+            context = app,
+            action = ACTION_REMINDER_DONE,
+            reminderType = kind,
+            notificationId = notificationId,
+            requestCode = notificationId + 100,
+            title = title,
+            message = message,
+            channelId = CHANNEL_REMINDERS
+        )
 
-        val pendingIntent = PendingIntent.getBroadcast(
+        val builder = NotificationCompat.Builder(app, CHANNEL_REMINDERS)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentTitle(title)
+            .setContentText(message)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(message))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_REMINDER)
+            .setAutoCancel(true)
+            .setOnlyAlertOnce(true)
+            .setContentIntent(contentPending)
+            .setVibrate(longArrayOf(0, 250, 150, 250))
+            .addAction(0, "Dismiss", donePending)
+
+        val notificationManager =
+            app.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.notify(notificationId, builder.build())
+    }
+
+    fun showStickyCareReminder(
+        context: Context,
+        title: String,
+        message: String,
+        reminderType: String,
+        notificationId: Int,
+        channelId: String = CHANNEL_PHONE_ALARMS
+    ) {
+        launchPhoneAlarm(
+            context = context,
+            title = title,
+            message = message,
+            reminderKind = reminderType,
+            notificationId = notificationId,
+            playSound = true
+        )
+    }
+
+    fun showStickyMedicineReminder(
+        context: Context,
+        title: String,
+        message: String,
+        notificationId: Int,
+        channelId: String = CHANNEL_PHONE_ALARMS,
+        medicineAlarmId: Long = 0L
+    ) {
+        launchPhoneAlarm(
+            context = context,
+            title = title,
+            message = message,
+            reminderKind = TYPE_MEDICINE,
+            notificationId = notificationId,
+            medicineAlarmId = medicineAlarmId,
+            playSound = true
+        )
+    }
+
+    fun cancelStickyReminder(context: Context, notificationId: Int) {
+        val notificationManager =
+            context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.cancel(notificationId)
+    }
+
+    fun cancelAllStickyReminders(context: Context) {
+        cancelStickyReminder(context, NOTIFICATION_ID_FEED)
+        cancelStickyReminder(context, NOTIFICATION_ID_SLEEP)
+        cancelStickyReminder(context, NOTIFICATION_ID_DIAPER)
+        cancelStickyReminder(context, NOTIFICATION_ID_BABY_CHECK)
+        cancelStickyReminder(context, NOTIFICATION_ID_FEED_REMINDER)
+        cancelStickyReminder(context, NOTIFICATION_ID_DIAPER_REMINDER)
+        cancelStickyReminder(context, NOTIFICATION_ID_BABY_CHECK_REMINDER)
+        for (i in 1..64) {
+            cancelStickyReminder(context, NOTIFICATION_MEDICINE_BASE + i)
+        }
+        cancelStickyReminder(context, 2105) // legacy medicine sticky
+    }
+
+    fun scheduleTimerCompleteAlarm(
+        context: Context,
+        delaySeconds: Long,
+        activityName: String,
+        babyName: String
+    ) {
+        val settings = CareCheckSettings(systemAlarmsEnabled = true, notificationsEnabled = true)
+        val triggerTime = System.currentTimeMillis() + (delaySeconds * 1000)
+        AlarmScheduler.schedule(
+            context = context,
+            triggerAtMillis = triggerTime,
+            requestCode = REQUEST_TIMER,
+            title = "⏰ $activityName Timer Done",
+            message = "$activityName session for $babyName has ended!",
+            reminderKind = "timer",
+            notificationId = REQUEST_TIMER,
+            channelId = CHANNEL_TIMERS,
+            settings = settings,
+            sticky = false
+        )
+    }
+
+    fun scheduleSnooze(
+        context: Context,
+        reminderType: String,
+        title: String,
+        message: String,
+        channelId: String = CHANNEL_REMINDERS,
+        settings: CareCheckSettings,
+        medicineAlarmId: Long = 0L
+    ) {
+        val kind = normalizeKind(reminderType)
+        val requestCode = snoozeRequestCode(kind, medicineAlarmId) ?: return
+        val notificationId = if (kind == TYPE_MEDICINE && medicineAlarmId > 0L) {
+            medicineNotificationId(medicineAlarmId)
+        } else {
+            notificationIdForType(kind)
+        }
+        AlarmScheduler.schedule(
+            context = context,
+            triggerAtMillis = System.currentTimeMillis() + SNOOZE_MS,
+            requestCode = requestCode,
+            title = title,
+            message = message,
+            reminderKind = kind,
+            notificationId = notificationId,
+            channelId = channelId,
+            settings = settings,
+            medicineAlarmId = medicineAlarmId
+        )
+    }
+
+    fun notificationIdForType(reminderType: String): Int = when (normalizeKind(reminderType)) {
+        TYPE_FEED -> NOTIFICATION_ID_FEED
+        TYPE_SLEEP -> NOTIFICATION_ID_SLEEP
+        TYPE_DIAPER -> NOTIFICATION_ID_DIAPER
+        TYPE_BABY_CHECK -> NOTIFICATION_ID_BABY_CHECK
+        else -> NOTIFICATION_ID_FEED
+    }
+
+    fun kindFromType(reminderType: String): ReminderKind? = when (normalizeKind(reminderType)) {
+        TYPE_FEED -> ReminderKind.FEED
+        TYPE_SLEEP -> ReminderKind.SLEEP
+        TYPE_DIAPER -> ReminderKind.DIAPER
+        TYPE_BABY_CHECK -> ReminderKind.BABY_CHECK
+        TYPE_MEDICINE -> ReminderKind.MEDICINE
+        else -> null
+    }
+
+    private fun actionPendingIntent(
+        context: Context,
+        action: String,
+        reminderType: String,
+        notificationId: Int,
+        requestCode: Int,
+        title: String? = null,
+        message: String? = null,
+        channelId: String? = null,
+        medicineAlarmId: Long = 0L
+    ): PendingIntent {
+        val intent = Intent(context, BabyAlarmReceiver::class.java).apply {
+            this.action = action
+            putExtra(EXTRA_REMINDER_TYPE, reminderType)
+            putExtra(EXTRA_NOTIFICATION_ID, notificationId)
+            putExtra(EXTRA_MEDICINE_ALARM_ID, medicineAlarmId)
+            if (title != null) putExtra(EXTRA_TITLE, title)
+            if (message != null) putExtra(EXTRA_MESSAGE, message)
+            if (channelId != null) putExtra(EXTRA_CHANNEL_ID, channelId)
+        }
+        return PendingIntent.getBroadcast(
             context,
             requestCode,
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                alarmManager.setAndAllowWhileIdle(
-                    AlarmManager.RTC_WAKEUP,
-                    triggerAtMillis,
-                    pendingIntent
-                )
-            } else {
-                alarmManager.set(
-                    AlarmManager.RTC_WAKEUP,
-                    triggerAtMillis,
-                    pendingIntent
-                )
-            }
-        } catch (e: SecurityException) {
-            // Fallback if exact alarm permissions missing
-            showSystemNotification(context, title, message, channelId)
-        }
     }
 }

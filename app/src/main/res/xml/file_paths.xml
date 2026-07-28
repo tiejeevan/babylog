@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <files-path name="memories" path="memories/" />
+    <cache-path name="camera_cache" path="camera/" />
+    <cache-path name="backup_cache" path="backup_share/" />
+</paths>

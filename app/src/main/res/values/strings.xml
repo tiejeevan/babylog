@@ -1,9 +1,17 @@
 <resources>
     <string name="app_name">BabyCare Live</string>
-    <string name="shortcut_feed_short">Log Feed</string>
-    <string name="shortcut_feed_long">Quick Feed Log</string>
-    <string name="shortcut_sleep_short">Log Nap</string>
-    <string name="shortcut_sleep_long">Quick Sleep Timer</string>
-    <string name="shortcut_diaper_short">Log Diaper</string>
-    <string name="shortcut_diaper_long">Quick Diaper Change</string>
+    <string name="shortcut_feed_short">Bottle</string>
+    <string name="shortcut_feed_long">Log a bottle feed</string>
+    <string name="shortcut_nurse_short">Nurse</string>
+    <string name="shortcut_nurse_long">Start nursing timer</string>
+    <string name="shortcut_sleep_short">Sleep</string>
+    <string name="shortcut_sleep_long">Start sleep timer</string>
+    <string name="shortcut_diaper_short">Diaper</string>
+    <string name="shortcut_diaper_long">Log a diaper change</string>
+    <string name="back_press_exit_hint">Press back again to exit</string>
+    <string name="exit_app_title">Exit BabyLog?</string>
+    <string name="exit_app_message">Quit completely or keep running in the background (sleep sounds &amp; sync stay active).</string>
+    <string name="exit_app_quit">Quit app</string>
+    <string name="exit_app_background">Run in background</string>
+    <string name="exit_app_cancel">Cancel</string>
 </resources>

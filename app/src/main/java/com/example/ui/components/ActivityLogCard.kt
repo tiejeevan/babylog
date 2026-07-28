@@ -18,6 +18,8 @@ import androidx.compose.material.icons.filled.Bathtub
 import androidx.compose.material.icons.filled.ChildCare
 import androidx.compose.material.icons.filled.CleaningServices
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.LocalHospital
 import androidx.compose.material.icons.filled.MedicalServices
@@ -30,7 +32,6 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -44,6 +45,7 @@ import androidx.compose.ui.unit.sp
 import com.example.data.model.ActivityLog
 import com.example.data.model.ActivityTypes
 import com.example.engine.IntelligentNeedEngine
+import com.example.ui.theme.CustomActionColor
 import com.example.ui.theme.DiaperColor
 import com.example.ui.theme.FeedingColor
 import com.example.ui.theme.HealthColor
@@ -52,6 +54,7 @@ import com.example.ui.theme.MilestoneColor
 import com.example.ui.theme.PumpingColor
 import com.example.ui.theme.SleepColor
 import com.example.ui.theme.TummyTimeColor
+import com.example.ui.viewmodel.BabyCareViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -60,6 +63,7 @@ import java.util.Locale
 fun ActivityLogCard(
     log: ActivityLog,
     onDeleteClick: (() -> Unit)? = null,
+    onEditClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val (title, icon, color) = when (log.activityType) {
@@ -74,20 +78,31 @@ fun ActivityLogCard(
         ActivityTypes.BATH -> Triple("Bath Time", Icons.Default.Bathtub, DiaperColor)
         ActivityTypes.TUMMY_TIME -> Triple("Tummy Time", Icons.Default.FitnessCenter, TummyTimeColor)
         ActivityTypes.MILESTONE -> Triple("Milestone Reached", Icons.Default.LocalHospital, MilestoneColor)
+        ActivityTypes.CUSTOM -> Triple(
+            log.notes.substringBefore(" — ").ifBlank { "Custom" },
+            Icons.Default.EditNote,
+            CustomActionColor
+        )
         else -> Triple(log.activityType, Icons.Default.ChildCare, MaterialTheme.colorScheme.primary)
     }
 
-    val timeFormat = SimpleDateFormat("h:mm a", Locale.getDefault())
-    val formattedTime = timeFormat.format(Date(log.startTimeMillis))
+    val formattedTime = formatLogTimestamp(log.startTimeMillis)
 
     val detailText = buildString {
+        if (log.activityType == ActivityTypes.BREASTFEEDING &&
+            (log.leftBreastDurationSec > 0 || log.rightBreastDurationSec > 0)
+        ) {
+            val leftMin = log.leftBreastDurationSec / 60
+            val rightMin = log.rightBreastDurationSec / 60
+            append("L ${leftMin}m · R ${rightMin}m  •  ")
+        }
         if (log.durationSeconds > 0) {
             append("Duration: ${IntelligentNeedEngine.formatMinutes(log.durationSeconds / 60)}  •  ")
         }
         if (log.volumeMl > 0 && log.activityType != ActivityTypes.BOTTLE) {
             append("Volume: ${log.volumeMl} ml  •  ")
         }
-        if (!log.milkType.isNull_orEmpty() && log.activityType == ActivityTypes.BOTTLE) {
+        if (!log.milkType.isNullOrEmpty() && log.activityType == ActivityTypes.BOTTLE) {
             append("${log.milkType}  •  ")
         }
         append("By ${log.caregiverName}")
@@ -133,7 +148,8 @@ fun ActivityLogCard(
                     Text(
                         text = title,
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.weight(1f)
                     )
                     Text(
                         text = formattedTime,
@@ -162,6 +178,20 @@ fun ActivityLogCard(
                 }
             }
 
+            if (onEditClick != null) {
+                IconButton(
+                    onClick = onEditClick,
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Edit,
+                        contentDescription = "Edit",
+                        tint = MaterialTheme.colorScheme.outline,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+
             if (onDeleteClick != null) {
                 IconButton(
                     onClick = onDeleteClick,
@@ -179,4 +209,12 @@ fun ActivityLogCard(
     }
 }
 
-private fun String?.isNull_orEmpty(): Boolean = this.isNullOrEmpty()
+private fun formatLogTimestamp(millis: Long): String {
+    val todayStart = BabyCareViewModel.startOfDayMillis(System.currentTimeMillis())
+    val logDayStart = BabyCareViewModel.startOfDayMillis(millis)
+    return if (logDayStart == todayStart) {
+        SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(millis))
+    } else {
+        SimpleDateFormat("MMM d · h:mm a", Locale.getDefault()).format(Date(millis))
+    }
+}

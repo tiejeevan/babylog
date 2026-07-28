@@ -1,19 +1,27 @@
-<?xml version="1.0" encoding="utf-8"?><!--
-   Sample data extraction rules file; uncomment and customize as necessary.
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+   Data extraction rules for cloud backup and device transfer (API 31+).
    See https://developer.android.com/about/versions/12/backup-restore#xml-changes
-   for details.
 -->
 <data-extraction-rules>
     <cloud-backup>
-        <!-- TODO: Use <include> and <exclude> to control what is backed up.
-        <include .../>
-        <exclude .../>
-        -->
+        <include domain="database" path="babycare_live_db" />
+        <include domain="database" path="babycare_live_db-wal" />
+        <include domain="database" path="babycare_live_db-shm" />
+        <include domain="sharedpref" path="care_sync_prefs.xml" />
+        <include domain="sharedpref" path="sleep_sound_prefs.xml" />
+        <include domain="file" path="memories/" />
+        <exclude domain="sharedpref" path="widget_debug_prefs.xml" />
+        <exclude domain="cache" path="." />
     </cloud-backup>
-    <!--
     <device-transfer>
-        <include .../>
-        <exclude .../>
+        <include domain="database" path="babycare_live_db" />
+        <include domain="database" path="babycare_live_db-wal" />
+        <include domain="database" path="babycare_live_db-shm" />
+        <include domain="sharedpref" path="care_sync_prefs.xml" />
+        <include domain="sharedpref" path="sleep_sound_prefs.xml" />
+        <include domain="file" path="memories/" />
+        <exclude domain="sharedpref" path="widget_debug_prefs.xml" />
+        <exclude domain="cache" path="." />
     </device-transfer>
-    -->
 </data-extraction-rules>

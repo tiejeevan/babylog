@@ -8,9 +8,11 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,8 +20,10 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -32,6 +36,9 @@ import androidx.compose.material.icons.filled.Bathtub
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ChildCare
 import androidx.compose.material.icons.filled.CleaningServices
+import androidx.compose.material.icons.filled.EditNote
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.LocalHospital
@@ -39,22 +46,32 @@ import androidx.compose.material.icons.filled.MedicalServices
 import androidx.compose.material.icons.filled.NightlightRound
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Scale
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Thermostat
 import androidx.compose.material.icons.filled.WaterDrop
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import androidx.compose.material3.TextButton
+import com.example.ui.theme.Dimens
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -63,19 +80,27 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.ActivityLog
 import com.example.data.model.ActivityTypes
+import com.example.ui.viewmodel.NursingSide
 import com.example.data.model.BabyProfile
 import com.example.data.model.CaregiverProfile
+import com.example.data.model.ExactAge
 import com.example.engine.BabyNeedPrediction
 import com.example.engine.IntelligentNeedEngine
+import com.example.engine.QuickActionPrefs
 import com.example.engine.TodaySummary
 import com.example.engine.UrgencyLevel
+import com.example.ui.dialogs.SetFavoriteActionDialog
+import com.example.ui.theme.CustomActionColor
 import com.example.ui.theme.DiaperColor
+import com.example.ui.theme.FavoriteActionColor
 import com.example.ui.theme.FeedingColor
 import com.example.ui.theme.HealthColor
 import com.example.ui.theme.MedicineColor
@@ -83,7 +108,14 @@ import com.example.ui.theme.MilestoneColor
 import com.example.ui.theme.PumpingColor
 import com.example.ui.theme.SleepColor
 import com.example.ui.theme.TummyTimeColor
+import androidx.compose.ui.platform.LocalContext
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.delay
+
+private const val FAVORITE_SLOT_TYPE = "FAVORITE_SLOT"
 
 @Composable
 fun TopBabyHeader(
@@ -91,8 +123,19 @@ fun TopBabyHeader(
     activeCaregiver: CaregiverProfile?,
     syncStatus: String,
     onSwitchCaregiverClick: () -> Unit,
-    onProfileClick: () -> Unit
+    onProfileClick: () -> Unit,
+    /** Placeholder status for future background care-kernel processes. */
+    backgroundKernelTitle: String = "No Process running"
 ) {
+    var showExactAgeDialog by remember { mutableStateOf(false) }
+
+    if (showExactAgeDialog && profile != null) {
+        ExactAgeLiveDialog(
+            profile = profile,
+            onDismiss = { showExactAgeDialog = false }
+        )
+    }
+
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.surface,
@@ -111,13 +154,14 @@ fun TopBabyHeader(
                 // Baby Profile & Age
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.clickable { onProfileClick() }
+                    modifier = Modifier.weight(1f, fill = false)
                 ) {
                     Box(
                         modifier = Modifier
                             .size(46.dp)
                             .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.primaryContainer),
+                            .background(MaterialTheme.colorScheme.primaryContainer)
+                            .clickable { onProfileClick() },
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
@@ -128,19 +172,27 @@ fun TopBabyHeader(
                         )
                     }
                     Spacer(modifier = Modifier.width(10.dp))
-                    Column {
+                    Column(modifier = Modifier.weight(1f, fill = false)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 text = profile?.name ?: "Your Baby",
                                 style = MaterialTheme.typography.titleLarge.copy(
                                     fontWeight = FontWeight.Bold
                                 ),
-                                color = MaterialTheme.colorScheme.onSurface
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier
+                                    .weight(1f, fill = false)
+                                    .clickable { onProfileClick() }
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Surface(
+                                onClick = { if (profile != null) showExactAgeDialog = true },
+                                enabled = profile != null,
                                 color = MaterialTheme.colorScheme.primaryContainer,
-                                shape = RoundedCornerShape(12.dp)
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.testTag("exact_age_chip")
                             ) {
                                 Text(
                                     text = profile?.getFormattedAge() ?: "Newborn",
@@ -152,38 +204,44 @@ fun TopBabyHeader(
                             }
                         }
                         Text(
-                            text = "Live Care OS • 24/7 Monitoring",
+                            text = backgroundKernelTitle,
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
 
-                // Active Caregiver Pill
-                Surface(
-                    onClick = onSwitchCaregiverClick,
-                    shape = RoundedCornerShape(20.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                    modifier = Modifier.testTag("caregiver_pill")
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Active Caregiver Pill
+                    Surface(
+                        onClick = onSwitchCaregiverClick,
+                        shape = RoundedCornerShape(20.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                        modifier = Modifier.testTag("caregiver_pill")
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(12.dp)
-                                .clip(CircleShape)
-                                .background(parseHexColor(activeCaregiver?.avatarColorHex))
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = activeCaregiver?.name ?: "Sarah (Mom)",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(12.dp)
+                                    .clip(CircleShape)
+                                    .background(parseHexColor(activeCaregiver?.avatarColorHex))
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = activeCaregiver?.name ?: "Sarah (Mom)",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                     }
                 }
             }
@@ -230,6 +288,114 @@ fun TopBabyHeader(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun ExactAgeLiveDialog(
+    profile: BabyProfile,
+    onDismiss: () -> Unit
+) {
+    var nowMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            nowMillis = System.currentTimeMillis()
+            delay(1000L)
+        }
+    }
+
+    val age = remember(nowMillis, profile.birthDateMillis) {
+        profile.getExactAge(nowMillis)
+    }
+    val bornOn = remember(profile.birthDateMillis, profile.birthTimeFormatted) {
+        val date = SimpleDateFormat("MMM d, yyyy", Locale.getDefault())
+            .format(Date(profile.birthDateMillis))
+        "$date · ${profile.birthTimeFormatted}"
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "${profile.name}'s exact age",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "Born $bornOn",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = age.breakdownLabel(),
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = age.liveClockLabel(),
+                    style = MaterialTheme.typography.displaySmall.copy(
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold
+                    ),
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.testTag("exact_age_live_clock")
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                ExactAgeUnitRow(age)
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = if (age.totalDays == 1L) "1 day total" else "${age.totalDays} days total",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close")
+            }
+        }
+    )
+}
+
+@Composable
+private fun ExactAgeUnitRow(age: ExactAge) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceEvenly
+    ) {
+        ExactAgeUnit(value = age.years, label = "yr")
+        ExactAgeUnit(value = age.months, label = "mo")
+        ExactAgeUnit(value = age.days, label = "day")
+        ExactAgeUnit(value = age.hours, label = "hr")
+        ExactAgeUnit(value = age.minutes, label = "min")
+        ExactAgeUnit(value = age.seconds, label = "sec")
+    }
+}
+
+@Composable
+private fun ExactAgeUnit(value: Int, label: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            text = value.toString(),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            fontFamily = FontFamily.Monospace
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
@@ -346,7 +512,10 @@ fun IntelligentNeedCard(
 fun LiveActiveTimerCard(
     ongoingActivity: ActivityLog,
     currentTimeMillis: Long,
-    onStopClick: () -> Unit
+    onStopClick: () -> Unit,
+    activeNursingSide: NursingSide = NursingSide.LEFT,
+    nursingSideStartedAtMillis: Long = 0L,
+    onNursingSideChange: (NursingSide) -> Unit = {}
 ) {
     val elapsedMillis = currentTimeMillis - ongoingActivity.startTimeMillis
     val totalSeconds = (elapsedMillis / 1000).coerceAtLeast(0)
@@ -360,6 +529,14 @@ fun LiveActiveTimerCard(
     } else {
         String.format("%02d:%02d", minutes, seconds)
     }
+
+    val isNursing = ongoingActivity.activityType == ActivityTypes.BREASTFEEDING
+    val sideStarted = nursingSideStartedAtMillis.takeIf { it > 0 } ?: ongoingActivity.startTimeMillis
+    val liveSideSec = ((currentTimeMillis - sideStarted) / 1000).coerceAtLeast(0)
+    val displayLeftSec = ongoingActivity.leftBreastDurationSec +
+        if (isNursing && activeNursingSide == NursingSide.LEFT) liveSideSec else 0
+    val displayRightSec = ongoingActivity.rightBreastDurationSec +
+        if (isNursing && activeNursingSide == NursingSide.RIGHT) liveSideSec else 0
 
     val (title, icon, color) = when (ongoingActivity.activityType) {
         ActivityTypes.SLEEP -> Triple("Baby is Sleeping 💤", Icons.Default.NightlightRound, SleepColor)
@@ -378,16 +555,14 @@ fun LiveActiveTimerCard(
         colors = CardDefaults.cardColors(containerColor = color.copy(alpha = 0.12f)),
         border = androidx.compose.foundation.BorderStroke(2.dp, color)
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+                .padding(16.dp)
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.fillMaxWidth()
             ) {
                 Box(
                     modifier = Modifier
@@ -404,7 +579,7 @@ fun LiveActiveTimerCard(
                     )
                 }
                 Spacer(modifier = Modifier.width(12.dp))
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = title,
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
@@ -426,22 +601,69 @@ fun LiveActiveTimerCard(
                 }
             }
 
+            if (isNursing) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = "Active side",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF53433C)
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    FilterChip(
+                        selected = activeNursingSide == NursingSide.LEFT,
+                        onClick = { onNursingSideChange(NursingSide.LEFT) },
+                        label = {
+                            Text("Left · ${formatSideMinutes(displayLeftSec)}")
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("nursing_side_left")
+                    )
+                    FilterChip(
+                        selected = activeNursingSide == NursingSide.RIGHT,
+                        onClick = { onNursingSideChange(NursingSide.RIGHT) },
+                        label = {
+                            Text("Right · ${formatSideMinutes(displayRightSec)}")
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("nursing_side_right")
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
             Button(
                 onClick = onStopClick,
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F)),
                 shape = RoundedCornerShape(16.dp),
-                modifier = Modifier.testTag("stop_timer_btn")
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(Dimens.LiveStopButtonHeight)
+                    .testTag("stop_timer_btn")
             ) {
                 Icon(
                     imageVector = Icons.Default.Stop,
                     contentDescription = "Stop",
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier.size(22.dp)
                 )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text("FINISH", fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Finish & save", fontWeight = FontWeight.Bold, fontSize = 16.sp)
             }
         }
     }
+}
+
+private fun formatSideMinutes(totalSec: Long): String {
+    val mins = totalSec / 60
+    val secs = totalSec % 60
+    return if (mins > 0) "${mins}m ${secs}s" else "${secs}s"
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -449,9 +671,65 @@ fun LiveActiveTimerCard(
 fun QuickActionGrid(
     onActionSelected: (String) -> Unit
 ) {
+    var showMoreActions by remember { mutableStateOf(false) }
+    var showFavoritePicker by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    var favoriteType by remember {
+        mutableStateOf(QuickActionPrefs.getFavoriteType(context))
+    }
+    var favoriteLabel by remember {
+        mutableStateOf(
+            QuickActionPrefs.getFavoriteLabel(context)
+                ?: favoriteType?.let { QuickActionPrefs.defaultLabelForType(it) }
+        )
+    }
+
+    if (showFavoritePicker) {
+        SetFavoriteActionDialog(
+            currentType = favoriteType,
+            onDismiss = { showFavoritePicker = false },
+            onConfirm = { type, label ->
+                QuickActionPrefs.setFavorite(context, type, label)
+                favoriteType = type
+                favoriteLabel = label
+                showFavoritePicker = false
+            },
+            onClear = {
+                QuickActionPrefs.clearFavorite(context)
+                favoriteType = null
+                favoriteLabel = null
+                showFavoritePicker = false
+            }
+        )
+    }
+
+    val primaryActions = listOf(
+        QuickActionItem("Bottle", ActivityTypes.BOTTLE, Icons.Default.WaterDrop, FeedingColor),
+        QuickActionItem("Nurse", ActivityTypes.BREASTFEEDING, Icons.Default.ChildCare, FeedingColor),
+        QuickActionItem("Sleep", ActivityTypes.SLEEP, Icons.Default.NightlightRound, SleepColor),
+        QuickActionItem("Diaper", ActivityTypes.DIAPER, Icons.Default.CleaningServices, DiaperColor),
+        QuickActionItem("Custom", ActivityTypes.CUSTOM, Icons.Default.EditNote, CustomActionColor),
+        QuickActionItem(
+            label = favoriteLabel ?: "Favorite",
+            type = FAVORITE_SLOT_TYPE,
+            icon = Icons.Default.Star,
+            color = FavoriteActionColor
+        )
+    )
+
+    val moreActions = listOf(
+        QuickActionItem("Pumping", ActivityTypes.PUMPING, Icons.Default.WaterDrop, PumpingColor),
+        QuickActionItem("Medicine", ActivityTypes.MEDICINE, Icons.Default.MedicalServices, MedicineColor),
+        QuickActionItem("Temp", ActivityTypes.TEMPERATURE, Icons.Default.Thermostat, HealthColor),
+        QuickActionItem("Growth", ActivityTypes.GROWTH, Icons.Default.Scale, HealthColor),
+        QuickActionItem("Bath", ActivityTypes.BATH, Icons.Default.Bathtub, DiaperColor),
+        QuickActionItem("Tummy Time", ActivityTypes.TUMMY_TIME, Icons.Default.FitnessCenter, TummyTimeColor),
+        QuickActionItem("Milestone", ActivityTypes.MILESTONE, Icons.Default.LocalHospital, MilestoneColor)
+    )
+
     Column(modifier = Modifier.fillMaxWidth()) {
         Text(
-            text = "ONE-HANDED QUICK ACTIONS",
+            text = "QUICK ACTIONS",
             fontSize = 12.sp,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -459,31 +737,82 @@ fun QuickActionGrid(
             modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp)
         )
 
-        val actions = listOf(
-            QuickActionItem("Bottle", ActivityTypes.BOTTLE, Icons.Default.WaterDrop, FeedingColor),
-            QuickActionItem("Breastfeed", ActivityTypes.BREASTFEEDING, Icons.Default.ChildCare, FeedingColor),
-            QuickActionItem("Diaper", ActivityTypes.DIAPER, Icons.Default.CleaningServices, DiaperColor),
-            QuickActionItem("Sleep", ActivityTypes.SLEEP, Icons.Default.NightlightRound, SleepColor),
-            QuickActionItem("Pumping", ActivityTypes.PUMPING, Icons.Default.WaterDrop, PumpingColor),
-            QuickActionItem("Medicine", ActivityTypes.MEDICINE, Icons.Default.MedicalServices, MedicineColor),
-            QuickActionItem("Temp", ActivityTypes.TEMPERATURE, Icons.Default.Thermostat, HealthColor),
-            QuickActionItem("Growth", ActivityTypes.GROWTH, Icons.Default.Scale, HealthColor),
-            QuickActionItem("Bath", ActivityTypes.BATH, Icons.Default.Bathtub, DiaperColor),
-            QuickActionItem("Tummy Time", ActivityTypes.TUMMY_TIME, Icons.Default.FitnessCenter, TummyTimeColor),
-            QuickActionItem("Milestone", ActivityTypes.MILESTONE, Icons.Default.LocalHospital, MilestoneColor)
-        )
+        // 3 × 2 matrix of big actions
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            primaryActions.chunked(3).forEach { rowItems ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    rowItems.forEach { action ->
+                        PrimaryQuickActionButton(
+                            item = action,
+                            onClick = {
+                                when (action.type) {
+                                    ActivityTypes.CUSTOM -> onActionSelected(ActivityTypes.CUSTOM)
+                                    FAVORITE_SLOT_TYPE -> {
+                                        val type = favoriteType
+                                        if (type.isNullOrBlank()) {
+                                            showFavoritePicker = true
+                                        } else {
+                                            onActionSelected(type)
+                                        }
+                                    }
+                                    else -> onActionSelected(action.type)
+                                }
+                            },
+                            onLongClick = if (action.type == FAVORITE_SLOT_TYPE) {
+                                { showFavoritePicker = true }
+                            } else {
+                                null
+                            },
+                            modifier = Modifier.weight(1f),
+                            cornerBadge = when (action.type) {
+                                ActivityTypes.CUSTOM -> "Misc"
+                                FAVORITE_SLOT_TYPE -> if (favoriteType == null) "Add" else "Edit"
+                                else -> null
+                            }
+                        )
+                    }
+                    // Keep row balanced if a chunk is somehow short
+                    repeat(3 - rowItems.size) {
+                        Spacer(modifier = Modifier.weight(1f))
+                    }
+                }
+            }
+        }
 
-        FlowRow(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-            maxItemsInEachRow = 4
+        TextButton(
+            onClick = { showMoreActions = !showMoreActions },
+            modifier = Modifier
+                .padding(top = 4.dp)
+                .testTag("more_quick_actions_btn")
         ) {
-            actions.forEach { action ->
-                QuickActionButton(
-                    item = action,
-                    onClick = { onActionSelected(action.type) }
-                )
+            Icon(
+                imageVector = if (showMoreActions) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                contentDescription = null
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = if (showMoreActions) "Hide more actions" else "More actions",
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 14.sp
+            )
+        }
+
+        AnimatedVisibility(visible = showMoreActions) {
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                maxItemsInEachRow = 4
+            ) {
+                moreActions.forEach { action ->
+                    QuickActionButton(
+                        item = action,
+                        onClick = { onActionSelected(action.type) }
+                    )
+                }
             }
         }
     }
@@ -496,6 +825,95 @@ data class QuickActionItem(
     val color: Color
 )
 
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun PrimaryQuickActionButton(
+    item: QuickActionItem,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    onLongClick: (() -> Unit)? = null,
+    cornerBadge: String? = null
+) {
+    val shape = RoundedCornerShape(18.dp)
+    val interactionModifier = if (onLongClick != null) {
+        Modifier.combinedClickable(
+            onClick = onClick,
+            onLongClick = onLongClick
+        )
+    } else {
+        Modifier.clickable(onClick = onClick)
+    }
+
+    Surface(
+        shape = shape,
+        color = item.color.copy(alpha = 0.12f),
+        border = androidx.compose.foundation.BorderStroke(1.5.dp, item.color.copy(alpha = 0.35f)),
+        modifier = modifier
+            .height(Dimens.PrimaryActionHeight)
+            .clip(shape)
+            .then(interactionModifier)
+            .testTag("quick_action_${item.type.lowercase()}")
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 6.dp, vertical = 10.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(item.color),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = item.icon,
+                        contentDescription = item.label,
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = item.label,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            if (cornerBadge != null) {
+                Surface(
+                    shape = RoundedCornerShape(7.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        item.color.copy(alpha = 0.55f)
+                    ),
+                    tonalElevation = 1.dp,
+                    shadowElevation = 1.dp,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = 5.dp, bottom = 5.dp)
+                ) {
+                    Text(
+                        text = cornerBadge,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = item.color,
+                        maxLines = 1,
+                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
 @Composable
 fun QuickActionButton(
     item: QuickActionItem,
@@ -507,7 +925,8 @@ fun QuickActionButton(
         color = item.color.copy(alpha = 0.10f),
         border = androidx.compose.foundation.BorderStroke(1.dp, item.color.copy(alpha = 0.3f)),
         modifier = Modifier
-            .size(80.dp)
+            .heightIn(min = Dimens.MinTouchTarget)
+            .size(width = 80.dp, height = 72.dp)
             .testTag("quick_action_${item.type.lowercase()}")
     ) {
         Column(
@@ -517,7 +936,7 @@ fun QuickActionButton(
         ) {
             Box(
                 modifier = Modifier
-                    .size(38.dp)
+                    .size(36.dp)
                     .clip(CircleShape)
                     .background(item.color),
                 contentAlignment = Alignment.Center
@@ -526,7 +945,7 @@ fun QuickActionButton(
                     imageVector = item.icon,
                     contentDescription = item.label,
                     tint = Color.White,
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier.size(18.dp)
                 )
             }
             Spacer(modifier = Modifier.height(4.dp))
@@ -622,3 +1041,171 @@ fun SummaryPill(
         )
     }
 }
+
+@Composable
+fun BabyStatusBoard(
+    duty: com.example.data.model.DutySession?,
+    logs: List<ActivityLog>,
+    ongoing: ActivityLog?,
+    prediction: BabyNeedPrediction,
+    syncStatus: String,
+    currentTimeMillis: Long,
+    activeCaregiverName: String?,
+    onClaimDuty: () -> Unit,
+    onClaimUntil10pm: () -> Unit,
+    onClaim1Hour: () -> Unit,
+    onReleaseDuty: () -> Unit
+) {
+    val lastFeed = logs.firstOrNull {
+        it.activityType == ActivityTypes.BOTTLE || it.activityType == ActivityTypes.BREASTFEEDING
+    }
+    val lastDiaper = logs.firstOrNull { it.activityType == ActivityTypes.DIAPER }
+    val lastSleepEnded = logs.firstOrNull {
+        it.activityType == ActivityTypes.SLEEP && it.endTimeMillis != null
+    }
+
+    val sleepState = when {
+        ongoing?.activityType == ActivityTypes.SLEEP -> {
+            val mins = (currentTimeMillis - ongoing.startTimeMillis) / 60_000L
+            "Sleeping · ${IntelligentNeedEngine.formatMinutes(mins)}"
+        }
+        lastSleepEnded?.endTimeMillis != null -> {
+            val awakeMins = (currentTimeMillis - lastSleepEnded.endTimeMillis!!) / 60_000L
+            "Awake · ${IntelligentNeedEngine.formatMinutes(awakeMins)}"
+        }
+        else -> "Awake"
+    }
+
+    val dutyLine = when {
+        duty == null || !duty.isActive -> "No one on duty"
+        duty.untilMillis != null -> {
+            val fmt = java.text.SimpleDateFormat("h:mm a", java.util.Locale.getDefault())
+            "${duty.caregiverName} is on duty until ${fmt.format(java.util.Date(duty.untilMillis))}"
+        }
+        else -> "${duty.caregiverName} is on duty"
+    }
+
+    val iAmOnDuty = duty?.isActive == true &&
+        duty.caregiverName.equals(activeCaregiverName, ignoreCase = true)
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("baby_status_board"),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f))
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Text(
+                text = "BABY STATUS BOARD",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.6.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+
+            StatusBoardRow(label = "On duty", value = dutyLine)
+            StatusBoardRow(
+                label = "Last feed",
+                value = lastFeed?.let { formatAgo(currentTimeMillis - it.startTimeMillis) } ?: "—"
+            )
+            StatusBoardRow(
+                label = "Last diaper",
+                value = lastDiaper?.let { formatAgo(currentTimeMillis - it.startTimeMillis) } ?: "—"
+            )
+            StatusBoardRow(label = "Sleep", value = sleepState)
+            StatusBoardRow(
+                label = "Next need",
+                value = "${prediction.primaryNeedTitle} · ${prediction.timeRemainingMinutes}m"
+            )
+            Text(
+                text = syncStatus,
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(top = 6.dp)
+            )
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            if (iAmOnDuty) {
+                OutlinedButton(
+                    onClick = onReleaseDuty,
+                    modifier = Modifier.fillMaxWidth().testTag("btn_release_duty"),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text("Release duty")
+                }
+            } else {
+                Button(
+                    onClick = onClaimDuty,
+                    modifier = Modifier.fillMaxWidth().testTag("btn_claim_duty"),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                ) {
+                    Text("I'm on duty", fontWeight = FontWeight.Bold)
+                }
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onClaim1Hour,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text("1 hour", fontSize = 12.sp)
+                    }
+                    OutlinedButton(
+                        onClick = onClaimUntil10pm,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text("Until 10pm", fontSize = 12.sp)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatusBoardRow(label: String, value: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 3.dp),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(
+            text = label,
+            fontSize = 13.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = value,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(start = 12.dp)
+        )
+    }
+}
+
+private fun formatAgo(diffMillis: Long): String {
+    val mins = (diffMillis / 60_000L).toInt().coerceAtLeast(0)
+    return when {
+        mins < 1 -> "Just now"
+        mins < 60 -> "${mins}m ago"
+        else -> {
+            val h = mins / 60
+            val m = mins % 60
+            if (m == 0) "${h}h ago" else "${h}h ${m}m ago"
+        }
+    }
+}
+

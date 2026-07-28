@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -20,8 +21,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.ChildCare
-import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -32,10 +31,13 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -48,12 +50,259 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.engine.PatternRangeDays
+import com.example.engine.PatternReport
 import com.example.ui.components.IntelligentNeedCard
+import com.example.ui.components.PatternInsightCard
+import com.example.ui.components.PatternLineChart
+import com.example.ui.components.PatternStatChip
+import com.example.ui.components.PatternTrendBarChart
+import com.example.ui.components.TypicalDayHourChart
 import com.example.ui.viewmodel.BabyCareViewModel
 import com.example.ui.viewmodel.ChatMessage
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import kotlin.math.roundToInt
 
 @Composable
 fun AIInsightsScreen(viewModel: BabyCareViewModel) {
+    var selectedTab by remember { mutableIntStateOf(0) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .testTag("ai_insights_screen")
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.AutoAwesome,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "INSIGHTS",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                    letterSpacing = 0.8.sp
+                )
+            }
+            Text(
+                text = "Patterns & Care Assistant",
+                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
+            )
+        }
+
+        TabRow(selectedTabIndex = selectedTab) {
+            Tab(
+                selected = selectedTab == 0,
+                onClick = { selectedTab = 0 },
+                text = { Text("Patterns") }
+            )
+            Tab(
+                selected = selectedTab == 1,
+                onClick = { selectedTab = 1 },
+                text = { Text("Ask AI") }
+            )
+        }
+
+        when (selectedTab) {
+            0 -> PatternsTab(viewModel = viewModel)
+            else -> AskAiTab(viewModel = viewModel)
+        }
+    }
+}
+
+@Composable
+private fun PatternsTab(viewModel: BabyCareViewModel) {
+    val report by viewModel.patternReport.collectAsStateWithLifecycle()
+    val range by viewModel.patternRangeDays.collectAsStateWithLifecycle()
+    val dayLabelFormat = remember { SimpleDateFormat("M/d", Locale.getDefault()) }
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item { Spacer(modifier = Modifier.height(4.dp)) }
+
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                PatternRangeDays.entries.forEach { option ->
+                    FilterChip(
+                        selected = range == option,
+                        onClick = { viewModel.setPatternRangeDays(option) },
+                        label = { Text("${option.days}d") }
+                    )
+                }
+            }
+        }
+
+        if (!report.hasEnoughData) {
+            item {
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            text = "Building your pattern picture",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "Logged on ${report.distinctActiveDays} of ${report.rangeDays} days. " +
+                                "Keep tracking feeds, sleep, and diapers for about 3 days to unlock habit insights.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        } else {
+            item {
+                PatternOverviewStats(report = report)
+            }
+
+            items(report.insights) { insight ->
+                PatternInsightCard(insight = insight)
+            }
+        }
+
+        item {
+            val feedCounts = report.dailyFeeds.map { it.feedCount.toFloat() }
+            val labels = report.dailyFeeds.map { dayLabelFormat.format(Date(it.dayStartMillis)) }
+            PatternTrendBarChart(
+                values = feedCounts,
+                labels = labels,
+                barColor = MaterialTheme.colorScheme.primary,
+                title = "Feeding",
+                subtitle = "Feeds per day"
+            )
+        }
+
+        item {
+            val volumes = report.dailyFeeds.map { it.volumeMl.toFloat() }
+            val labels = report.dailyFeeds.map { dayLabelFormat.format(Date(it.dayStartMillis)) }
+            PatternLineChart(
+                values = volumes,
+                labels = labels,
+                lineColor = MaterialTheme.colorScheme.primary,
+                title = "Feed volume",
+                subtitle = "ml per day"
+            )
+        }
+
+        item {
+            val sleepMins = report.dailySleep.map { it.sleepMinutes.toFloat() }
+            val labels = report.dailySleep.map { dayLabelFormat.format(Date(it.dayStartMillis)) }
+            PatternTrendBarChart(
+                values = sleepMins,
+                labels = labels,
+                barColor = MaterialTheme.colorScheme.tertiary,
+                title = "Sleep",
+                subtitle = "Minutes per day"
+            )
+        }
+
+        item {
+            val diaperTotals = report.dailyDiapers.map { it.totalCount.toFloat() }
+            val labels = report.dailyDiapers.map { dayLabelFormat.format(Date(it.dayStartMillis)) }
+            PatternTrendBarChart(
+                values = diaperTotals,
+                labels = labels,
+                barColor = MaterialTheme.colorScheme.secondary,
+                title = "Diapers",
+                subtitle = "Changes per day"
+            )
+        }
+
+        item {
+            TypicalDayHourChart(bins = report.hourBins)
+        }
+
+        if (report.breastBalance.totalSeconds > 0) {
+            item {
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            text = "BREAST SIDE BALANCE",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            letterSpacing = 0.6.sp
+                        )
+                        Text(
+                            text = "L ${report.breastBalance.leftPercent}%  ·  R ${report.breastBalance.rightPercent}%",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                        )
+                    }
+                }
+            }
+        }
+
+        item { Spacer(modifier = Modifier.height(24.dp)) }
+    }
+}
+
+@Composable
+private fun PatternOverviewStats(report: PatternReport) {
+    val avgFeeds = if (report.dailyFeeds.isNotEmpty()) {
+        report.dailyFeeds.map { it.feedCount }.average()
+    } else 0.0
+    val avgSleep = if (report.dailySleep.isNotEmpty()) {
+        report.dailySleep.map { it.sleepMinutes }.average()
+    } else 0.0
+    val feedInterval = report.feedInterval?.averageMinutes?.roundToInt()?.let { "${it}m" } ?: "--"
+    val nightPct = "${report.nightSleepPercent}%"
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            PatternStatChip(
+                label = "Avg feeds",
+                value = "%.1f".format(avgFeeds),
+                modifier = Modifier.weight(1f)
+            )
+            PatternStatChip(
+                label = "Avg sleep",
+                value = "${avgSleep.roundToInt()}m",
+                modifier = Modifier.weight(1f)
+            )
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            PatternStatChip(
+                label = "Feed gap",
+                value = feedInterval,
+                modifier = Modifier.weight(1f)
+            )
+            PatternStatChip(
+                label = "Night sleep",
+                value = nightPct,
+                modifier = Modifier.weight(1f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun AskAiTab(viewModel: BabyCareViewModel) {
     val prediction by viewModel.needPrediction.collectAsStateWithLifecycle()
     val chatMessages by viewModel.chatMessages.collectAsStateWithLifecycle()
     val isThinking by viewModel.isAiThinking.collectAsStateWithLifecycle()
@@ -67,33 +316,7 @@ fun AIInsightsScreen(viewModel: BabyCareViewModel) {
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .testTag("ai_insights_screen")
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.AutoAwesome,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = "BABYCARE GEMINI AI ASSISTANT",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary,
-                    letterSpacing = 0.8.sp
-                )
-            }
-            Text(
-                text = "Predictive Insights & Pediatric AI",
-                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
-            )
-        }
-
+    Column(modifier = Modifier.fillMaxSize()) {
         LazyColumn(
             state = listState,
             modifier = Modifier
@@ -102,6 +325,8 @@ fun AIInsightsScreen(viewModel: BabyCareViewModel) {
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            item { Spacer(modifier = Modifier.height(8.dp)) }
+
             item {
                 IntelligentNeedCard(
                     prediction = prediction,
@@ -110,7 +335,7 @@ fun AIInsightsScreen(viewModel: BabyCareViewModel) {
             }
 
             item {
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = "ASK AI CAREGIVER ASSISTANT",
                     fontSize = 11.sp,
@@ -126,10 +351,10 @@ fun AIInsightsScreen(viewModel: BabyCareViewModel) {
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     val promptSuggestions = listOf(
+                        "What patterns do you see in our logs?",
                         "What is my baby's wake window?",
                         "How to soothe a gassy baby?",
-                        "Safe sleep guidelines",
-                        "How much formula at 2 months?"
+                        "Safe sleep guidelines"
                     )
                     items(promptSuggestions) { prompt ->
                         FilterChip(
@@ -163,10 +388,11 @@ fun AIInsightsScreen(viewModel: BabyCareViewModel) {
             }
         }
 
-        // Bottom Chat Input Bar
         Surface(
             tonalElevation = 4.dp,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier
+                .fillMaxWidth()
+                .imePadding()
         ) {
             Row(
                 modifier = Modifier

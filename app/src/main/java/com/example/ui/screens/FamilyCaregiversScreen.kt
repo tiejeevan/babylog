@@ -1,5 +1,9 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+
 package com.example.ui.screens
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -29,6 +33,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -38,6 +43,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -53,15 +59,19 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.data.backup.FullBackupManager
 import com.example.data.model.BabyProfile
 import com.example.data.model.CaregiverProfile
+import com.example.engine.BluetoothCareEngine
+import com.example.engine.CareSyncPrefs
 import com.example.ui.dialogs.AddCaregiverDialog
 import com.example.ui.dialogs.EnterPinDialog
-import com.example.ui.dialogs.OnboardingSetupDialog
 import com.example.ui.viewmodel.BabyCareViewModel
+import com.example.ui.viewmodel.BackupUiState
 import com.example.ui.theme.parseHexColor
 import android.widget.Toast
-
+import java.util.Calendar
+import java.util.Locale
 @Composable
 fun FamilyCaregiversScreen(
     viewModel: BabyCareViewModel,
@@ -70,21 +80,59 @@ fun FamilyCaregiversScreen(
     val caregivers by viewModel.caregivers.collectAsStateWithLifecycle()
     val activeCaregiver by viewModel.activeCaregiver.collectAsStateWithLifecycle()
     val profile by viewModel.babyProfile.collectAsStateWithLifecycle()
+    val activeDuty by viewModel.activeDuty.collectAsStateWithLifecycle()
+    val muteOffDuty by viewModel.muteNonUrgentWhenOffDuty.collectAsStateWithLifecycle()
+    val vibrateOnReceive by viewModel.vibrateOnReceive.collectAsStateWithLifecycle()
+
+    val context = LocalContext.current
 
     var showAddCaregiverDialog by remember { mutableStateOf(false) }
     var selectedCaregiverToSwitch by remember { mutableStateOf<CaregiverProfile?>(null) }
     var showResetConfirmationDialog by remember { mutableStateOf(false) }
-    var showSetupDialog by remember { mutableStateOf(false) }
+    var showRestoreConfirmationDialog by remember { mutableStateOf(false) }
+    var showWidgetLogDialog by remember { mutableStateOf(false) }
     var babyNameText by remember(profile?.name) { mutableStateOf(profile?.name ?: "Your Baby") }
     var feedIntervalText by remember { mutableStateOf((profile?.targetFeedingIntervalMinutes ?: 180).toString()) }
     var napIntervalText by remember { mutableStateOf((profile?.targetNapIntervalMinutes ?: 150).toString()) }
-
-    var showWidgetLogDialog by remember { mutableStateOf(false) }
     var widgetLogs by remember { mutableStateOf(emptyList<String>()) }
     var widgetDiagnosticReport by remember { mutableStateOf("") }
 
-    val context = LocalContext.current
-    val familyCode = "BABY-LIVE-8829-FAMILY"
+    val backupUiState by viewModel.backupUiState.collectAsStateWithLifecycle()
+    val backupInProgress = backupUiState is BackupUiState.InProgress
+
+    val createBackupLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/zip")
+    ) { uri ->
+        if (uri != null) {
+            viewModel.backupToUri(uri)
+        }
+    }
+
+    val openBackupLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            viewModel.restoreFromUri(uri)
+        }
+    }
+
+    LaunchedEffect(backupUiState) {
+        when (val state = backupUiState) {
+            is BackupUiState.Success -> {
+                Toast.makeText(context, state.message, Toast.LENGTH_LONG).show()
+                viewModel.clearBackupUiState()
+            }
+            is BackupUiState.Error -> {
+                Toast.makeText(context, state.message, Toast.LENGTH_LONG).show()
+                viewModel.clearBackupUiState()
+            }
+            else -> Unit
+        }
+    }
+
+    val familyPin by BluetoothCareEngine.passcode.collectAsStateWithLifecycle()
+    val careSyncStatus by BluetoothCareEngine.statusText.collectAsStateWithLifecycle()
+    var familyPinDraft by remember(familyPin) { mutableStateOf(familyPin) }
 
     LazyColumn(
         modifier = Modifier
@@ -215,7 +263,119 @@ fun FamilyCaregiversScreen(
             }
         }
 
-        // Family Invitation Code Card
+        // On-duty hand-off
+        item {
+            val iAmOnDuty = activeDuty?.isActive == true &&
+                activeDuty?.caregiverName.equals(activeCaregiver?.name, ignoreCase = true)
+
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("card_duty_handoff"),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.55f))
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "I'm on duty",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    val dutyStatus = when {
+                        activeDuty == null || activeDuty?.isActive != true -> "No one claimed primary caregiver"
+                        activeDuty!!.untilMillis != null -> {
+                            val fmt = java.text.SimpleDateFormat("h:mm a", java.util.Locale.getDefault())
+                            "${activeDuty!!.caregiverName} is on duty until ${fmt.format(java.util.Date(activeDuty!!.untilMillis!!))}"
+                        }
+                        else -> "${activeDuty!!.caregiverName} is on duty"
+                    }
+                    Text(
+                        text = dutyStatus,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    if (iAmOnDuty) {
+                        OutlinedButton(
+                            onClick = { viewModel.releaseDuty() },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text("Release duty")
+                        }
+                    } else {
+                        Button(
+                            onClick = { viewModel.claimDuty(null) },
+                            modifier = Modifier.fillMaxWidth().testTag("family_claim_duty"),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text("I'm on duty", fontWeight = FontWeight.Bold)
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(
+                                onClick = { viewModel.claimDutyForHours(1) },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(10.dp)
+                            ) { Text("1 hour") }
+                            OutlinedButton(
+                                onClick = { viewModel.claimDutyUntilHour(22) },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(10.dp)
+                            ) { Text("Until 10pm") }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        "Alert settings",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Vibrate on incoming messages", fontWeight = FontWeight.SemiBold)
+                            Text(
+                                text = "Vibrate when chat or ping arrives from another caregiver.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        androidx.compose.material3.Switch(
+                            checked = vibrateOnReceive,
+                            onCheckedChange = { viewModel.setVibrateOnReceive(it) },
+                            modifier = Modifier.testTag("family_vibrate_on_receive_toggle")
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Mute non-urgent pings when off duty", fontWeight = FontWeight.SemiBold)
+                            Text(
+                                text = "Urgent pings still alert. Chat history is always saved.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        androidx.compose.material3.Switch(
+                            checked = muteOffDuty,
+                            onCheckedChange = { viewModel.setMuteNonUrgentWhenOffDuty(it) }
+                        )
+                    }
+                }
+            }
+        }
+
+        // Family PIN for Nearby Care Sync
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -227,54 +387,70 @@ fun FamilyCaregiversScreen(
                         Icon(imageVector = Icons.Default.QrCode, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Family Share Code & QR Sync",
+                            text = "Family PIN (Nearby Sync)",
                             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
                         )
                     }
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Share this code with co-parents or babysitters to connect their phone to ${profile?.name ?: "your baby"}'s live operating system in real time.",
+                        text = "Use the same PIN on Mom, Dad, and Nanny phones. Turn on Care Sync nearby to chat, ping, and sync all baby data (logs, growth, medical, milk, milestones, profile).",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = careSyncStatus,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.SemiBold
                     )
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    Surface(
-                        color = MaterialTheme.colorScheme.primaryContainer,
-                        shape = RoundedCornerShape(12.dp),
+                    OutlinedTextField(
+                        value = familyPinDraft,
+                        onValueChange = { if (it.length <= 6 && it.all(Char::isDigit)) familyPinDraft = it },
+                        label = { Text("Family PIN") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                         modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(12.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = familyCode,
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Black,
-                                letterSpacing = 1.sp,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
+                    )
 
-                            Button(
-                                onClick = {
-                                    val sendIntent = android.content.Intent().apply {
-                                        action = android.content.Intent.ACTION_SEND
-                                        putExtra(android.content.Intent.EXTRA_TEXT, "Join ${profile?.name ?: "our baby"}'s BabyCare Live family profile using invite code: $familyCode")
-                                        type = "text/plain"
-                                    }
-                                    context.startActivity(android.content.Intent.createChooser(sendIntent, "Share Invitation Code"))
-                                },
-                                shape = RoundedCornerShape(8.dp)
-                            ) {
-                                Icon(imageVector = Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Share Invite")
-                            }
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                BluetoothCareEngine.setPasscode(familyPinDraft)
+                                CareSyncPrefs.setFamilyPin(context, familyPinDraft)
+                                Toast.makeText(context, "Family PIN saved", Toast.LENGTH_SHORT).show()
+                            },
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Save PIN")
+                        }
+                        Button(
+                            onClick = {
+                                val sendIntent = android.content.Intent().apply {
+                                    action = android.content.Intent.ACTION_SEND
+                                    putExtra(
+                                        android.content.Intent.EXTRA_TEXT,
+                                        "Join ${profile?.name ?: "our baby"}'s BabyCare Care Sync. Install the app, open Care Sync, and enter Family PIN: $familyPinDraft"
+                                    )
+                                    type = "text/plain"
+                                }
+                                context.startActivity(android.content.Intent.createChooser(sendIntent, "Share Family PIN"))
+                            },
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(imageVector = Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Share PIN")
                         }
                     }
                 }
@@ -301,7 +477,7 @@ fun FamilyCaregiversScreen(
                             Text("📡", fontSize = 20.sp)
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "Bluetooth Caregiver Ping & Walkie-Talkie",
+                                text = "Nearby Care Sync & Walkie-Talkie",
                                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                                 color = MaterialTheme.colorScheme.onSecondaryContainer
                             )
@@ -323,7 +499,7 @@ fun FamilyCaregiversScreen(
 
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Connect directly with spouse phone using Bluetooth. Trigger instant vibration alerts ('Need urgent help!', 'Your turn for feed!') & offline caregiver chat.",
+                        text = "Connect nearby family phones. Vibration pings, caregiver chat, and activity log sync while connected.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f)
                     )
@@ -336,7 +512,7 @@ fun FamilyCaregiversScreen(
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("Open Bluetooth Sync & Ping 📳", fontWeight = FontWeight.Bold)
+                        Text("Open Care Sync 📳", fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -410,148 +586,6 @@ fun FamilyCaregiversScreen(
                         Icon(imageVector = Icons.Default.Check, contentDescription = null)
                         Spacer(modifier = Modifier.width(6.dp))
                         Text("Save Baby Profile Settings", fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
-        }
-
-        // System Level Background Access & Alerts (Moved from Dashboard)
-        item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "SYSTEM ALERTS & SETUP CONFIGURATION",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        OutlinedButton(
-                            onClick = { showSetupDialog = true },
-                            modifier = Modifier.testTag("rerun_setup_wizard_btn")
-                        ) {
-                            Text("Re-run Setup Wizard ⚙️", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = "Test real system notification bar alerts, schedule exact alarm background triggers, or review system permissions.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Button(
-                            onClick = {
-                                viewModel.triggerTestNotification(context)
-                                Toast.makeText(context, "System Notification Sent! Check status bar 🔔", Toast.LENGTH_SHORT).show()
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier
-                                .weight(1f)
-                                .testTag("test_system_alert_btn")
-                        ) {
-                            Text("Test Alert 🔔", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        }
-
-                        Button(
-                            onClick = {
-                                viewModel.scheduleRoutineSystemAlarms(context)
-                                Toast.makeText(context, "System Alarm Scheduled for next routine window ⏰", Toast.LENGTH_SHORT).show()
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier
-                                .weight(1f)
-                                .testTag("schedule_system_alarms_btn")
-                        ) {
-                            Text("Schedule Alarm ⏰", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    OutlinedButton(
-                        onClick = {
-                            val appWidgetManager = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                                context.getSystemService(android.appwidget.AppWidgetManager::class.java)
-                            } else null
-                            val myProvider = android.content.ComponentName(context, com.example.widget.BabyCareWidgetProvider::class.java)
-
-                            val isPinSupported = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                                appWidgetManager?.isRequestPinAppWidgetSupported == true
-                            } else false
-
-                            val activeInstances = try {
-                                appWidgetManager?.getAppWidgetIds(myProvider)?.size ?: 0
-                            } catch (e: Exception) { -1 }
-
-                            com.example.widget.WidgetLogger.log(context, "User clicked 'Add Home Screen Widget'")
-                            com.example.widget.WidgetLogger.log(context, "SDK: ${android.os.Build.VERSION.SDK_INT} | AppWidgetManager: ${appWidgetManager != null} | PinSupported: $isPinSupported | ActiveInstances: $activeInstances")
-
-                            var pinResultMsg = ""
-                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                                if (appWidgetManager != null && isPinSupported) {
-                                    try {
-                                        val pinnedWidgetCallbackIntent = android.content.Intent(context, com.example.widget.BabyCareWidgetProvider::class.java)
-                                        val successCallback = android.app.PendingIntent.getBroadcast(
-                                            context,
-                                            0,
-                                            pinnedWidgetCallbackIntent,
-                                            android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
-                                        )
-                                        val success = appWidgetManager.requestPinAppWidget(myProvider, null, successCallback)
-                                        com.example.widget.WidgetLogger.log(context, "requestPinAppWidget executed. Return value: $success")
-                                        pinResultMsg = "Pin request sent to device launcher (Result: $success)."
-                                    } catch (e: Exception) {
-                                        com.example.widget.WidgetLogger.log(context, "Exception calling requestPinAppWidget", isError = true, throwable = e)
-                                        pinResultMsg = "Pin failed with exception: ${e.localizedMessage ?: e.message}"
-                                    }
-                                } else {
-                                    val errReason = if (appWidgetManager == null) "AppWidgetManager is NULL on this device/emulator" else "Launcher does NOT support pin (isRequestPinAppWidgetSupported = false)"
-                                    com.example.widget.WidgetLogger.log(context, "Cannot pin widget: $errReason", isError = true)
-                                    pinResultMsg = "Pinning unavailable: $errReason.\n\n👉 Manual Workaround: Long-press your device Home Screen -> tap 'Widgets' -> locate 'BabyCare Live' -> drag it to your screen."
-                                }
-                            } else {
-                                com.example.widget.WidgetLogger.log(context, "Android OS version ${android.os.Build.VERSION.SDK_INT} lacks requestPinAppWidget support", isError = true)
-                                pinResultMsg = "Android version below Oreo (API 26) does not support pin widget requests."
-                            }
-
-                            // Trigger widget refresh
-                            com.example.widget.BabyCareWidgetProvider.updateAllWidgets(context)
-
-                            val logs = com.example.widget.WidgetLogger.getLogs(context)
-                            widgetLogs = logs
-                            widgetDiagnosticReport = "📱 WIDGET DIAGNOSTIC & PIN REPORT\n\n" +
-                                    "• OS Version: Android ${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT})\n" +
-                                    "• AppWidgetManager Service: ${if (appWidgetManager != null) "Available" else "NULL"}\n" +
-                                    "• Programmatic Pinning Supported: $isPinSupported\n" +
-                                    "• Active Placed Widgets on Home Screen: $activeInstances\n\n" +
-                                    "RESULT:\n$pinResultMsg"
-
-                            showWidgetLogDialog = true
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("pin_widget_btn"),
-                        shape = RoundedCornerShape(10.dp)
-                    ) {
-                        Text("Add Home Screen Widget 📱", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -650,6 +684,57 @@ fun FamilyCaregiversScreen(
                         }
                     }
 
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = {
+                            val appWidgetManager = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                                context.getSystemService(android.appwidget.AppWidgetManager::class.java)
+                            } else null
+                            val myProvider = android.content.ComponentName(context, com.example.widget.BabyCareWidgetProvider::class.java)
+                            val isPinSupported = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                                appWidgetManager?.isRequestPinAppWidgetSupported == true
+                            } else false
+                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O &&
+                                appWidgetManager != null && isPinSupported
+                            ) {
+                                try {
+                                    val pinnedWidgetCallbackIntent = android.content.Intent(
+                                        context,
+                                        com.example.widget.BabyCareWidgetProvider::class.java
+                                    )
+                                    val successCallback = android.app.PendingIntent.getBroadcast(
+                                        context,
+                                        0,
+                                        pinnedWidgetCallbackIntent,
+                                        android.app.PendingIntent.FLAG_UPDATE_CURRENT or
+                                            android.app.PendingIntent.FLAG_IMMUTABLE
+                                    )
+                                    appWidgetManager.requestPinAppWidget(myProvider, null, successCallback)
+                                    Toast.makeText(context, "Pin request sent to launcher", Toast.LENGTH_SHORT).show()
+                                } catch (e: Exception) {
+                                    Toast.makeText(
+                                        context,
+                                        "Pin failed: ${e.localizedMessage ?: e.message}",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                }
+                            } else {
+                                Toast.makeText(
+                                    context,
+                                    "Long-press Home → Widgets → BabyCare Live",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
+                            com.example.widget.BabyCareWidgetProvider.updateAllWidgets(context)
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("pin_widget_btn"),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text("Add Home Screen Widget 📱", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+
                     val recentError = com.example.widget.WidgetLogger.getLastError(context)
                     if (recentError != null) {
                         Spacer(modifier = Modifier.height(8.dp))
@@ -686,12 +771,71 @@ fun FamilyCaregiversScreen(
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "All logs, growth stats, medical records, and milk stash are saved permanently in Room DB. You can wipe all data or clear sample logs below.",
+                        text = "Full backup saves all logs, growth, medical visits, notes, pics, and videos to a ZIP you keep (Drive, Files, email). App updates keep local data. After uninstall, restore from your ZIP.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onErrorContainer
                     )
 
                     Spacer(modifier = Modifier.height(12.dp))
+
+                    if (backupInProgress) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(22.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = "Working on backup/restore…",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                createBackupLauncher.launch(FullBackupManager.suggestedBackupFileName())
+                            },
+                            enabled = !backupInProgress,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary
+                            ),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("backup_all_data_btn")
+                        ) {
+                            Text("Backup all data", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        Button(
+                            onClick = { showRestoreConfirmationDialog = true },
+                            enabled = !backupInProgress,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.secondary
+                            ),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("restore_backup_btn")
+                        ) {
+                            Text("Restore backup", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -702,6 +846,7 @@ fun FamilyCaregiversScreen(
                                 viewModel.clearAllSampleData()
                                 Toast.makeText(context, "Sample data cleared. Ready for real logs!", Toast.LENGTH_LONG).show()
                             },
+                            enabled = !backupInProgress,
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.8f)),
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier
@@ -715,6 +860,7 @@ fun FamilyCaregiversScreen(
                             onClick = {
                                 showResetConfirmationDialog = true
                             },
+                            enabled = !backupInProgress,
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier
@@ -761,6 +907,33 @@ fun FamilyCaregiversScreen(
         )
     }
 
+    if (showRestoreConfirmationDialog) {
+        AlertDialog(
+            onDismissRequest = { showRestoreConfirmationDialog = false },
+            title = { Text("Restore full backup?", fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    "This replaces all current logs, medical records, notes, photos, videos, and settings with the backup file. The app will restart when restore finishes."
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showRestoreConfirmationDialog = false
+                        openBackupLauncher.launch(arrayOf("application/zip", "application/octet-stream", "*/*"))
+                    }
+                ) {
+                    Text("Choose backup file", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRestoreConfirmationDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
     if (showResetConfirmationDialog) {
         AlertDialog(
             onDismissRequest = { showResetConfirmationDialog = false },
@@ -782,22 +955,6 @@ fun FamilyCaregiversScreen(
                 TextButton(onClick = { showResetConfirmationDialog = false }) {
                     Text("Cancel")
                 }
-            }
-        )
-    }
-
-    if (showSetupDialog) {
-        OnboardingSetupDialog(
-            initialProfile = profile,
-            onDismiss = { showSetupDialog = false },
-            onCompleteSetup = { updatedProfile, initialWeightKg, initialHeightCm ->
-                viewModel.completeOnboardingSetup(
-                    profile = updatedProfile,
-                    initialWeightKg = initialWeightKg,
-                    initialHeightCm = initialHeightCm
-                )
-                showSetupDialog = false
-                Toast.makeText(context, "Setup completed for ${updatedProfile.name}!", Toast.LENGTH_SHORT).show()
             }
         )
     }
@@ -886,4 +1043,19 @@ fun FamilyCaregiversScreen(
             }
         )
     }
+}
+
+/** Clock time today, or tomorrow if that clock time has already passed. */
+internal fun medicinePilotMillisForTodayOrTomorrow(hour: Int, minute: Int): Long {
+    val now = System.currentTimeMillis()
+    val cal = Calendar.getInstance().apply {
+        set(Calendar.HOUR_OF_DAY, hour)
+        set(Calendar.MINUTE, minute)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }
+    if (cal.timeInMillis <= now) {
+        cal.add(Calendar.DAY_OF_YEAR, 1)
+    }
+    return cal.timeInMillis
 }

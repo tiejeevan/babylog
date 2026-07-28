@@ -3,47 +3,53 @@ package com.example.ui.screens
 import android.app.Activity
 import android.view.WindowManager
 import android.widget.Toast
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Bedtime
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.LightMode
-import androidx.compose.material.icons.filled.NightlightRound
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Timer
-import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
@@ -51,6 +57,7 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -59,20 +66,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.IconButton
 import com.example.data.model.ActivityTypes
 import com.example.engine.BabySoundSynthesizer
+import com.example.engine.SleepSoundPrefs
 import com.example.engine.SoundType
 import com.example.ui.viewmodel.BabyCareViewModel
 import java.util.Locale
@@ -99,17 +105,49 @@ fun SleepSoundScreen(
 ) {
     val context = LocalContext.current
     val isPlaying by BabySoundSynthesizer.isPlaying.collectAsStateWithLifecycle()
+    val isPaused by BabySoundSynthesizer.isPaused.collectAsStateWithLifecycle()
     val activeSound by BabySoundSynthesizer.currentSound.collectAsStateWithLifecycle()
     val volume by BabySoundSynthesizer.volume.collectAsStateWithLifecycle()
     val remainingTimerMillis by BabySoundSynthesizer.remainingTimerMillis.collectAsStateWithLifecycle()
 
-    var selectedLightColor by remember { mutableStateOf(NightLightPresets[0]) }
-    var lightBrightness by remember { mutableFloatStateOf(0.75f) }
-    var isBreathingEnabled by remember { mutableStateOf(true) }
-    var keepScreenAwake by remember { mutableStateOf(true) }
-    var selectedTimerMinutes by remember { mutableIntStateOf(0) }
+    var selectedLightColor by remember {
+        val idx = SleepSoundPrefs.getColorIndex(context).coerceIn(0, NightLightPresets.lastIndex)
+        mutableStateOf(NightLightPresets[idx])
+    }
+    var lightBrightness by remember {
+        mutableFloatStateOf(SleepSoundPrefs.getBrightness(context))
+    }
+    var isBreathingEnabled by remember {
+        mutableStateOf(SleepSoundPrefs.isPulseEnabled(context))
+    }
+    var keepScreenAwake by remember {
+        mutableStateOf(SleepSoundPrefs.isKeepAwake(context))
+    }
+    var selectedTimerMinutes by remember {
+        mutableIntStateOf(SleepSoundPrefs.getTimerMinutes(context))
+    }
+    var showControls by remember { mutableStateOf(true) }
+    var selectedSound by remember {
+        mutableStateOf(SleepSoundPrefs.getSoundType(context))
+    }
 
-    // Keep screen awake side-effect when enabled
+    LaunchedEffect(Unit) {
+        val savedVol = SleepSoundPrefs.getVolume(context)
+        BabySoundSynthesizer.setVolume(savedVol)
+        if (!isPlaying && !isPaused) {
+            selectedSound = SleepSoundPrefs.getSoundType(context)
+        } else {
+            selectedSound = activeSound
+        }
+    }
+
+    LaunchedEffect(activeSound) {
+        if (isPlaying || isPaused) {
+            selectedSound = activeSound
+        }
+    }
+
+    // Keep screen awake
     DisposableEffect(keepScreenAwake) {
         val activity = context as? Activity
         if (keepScreenAwake) {
@@ -122,190 +160,479 @@ fun SleepSoundScreen(
         }
     }
 
-    // Breathing pulse animation for night light
+    // Soft breathing for glow / brightness (slow, calm — not a strobe)
     val infiniteTransition = rememberInfiniteTransition(label = "NightLightBreathing")
-    val breathingAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.6f,
+    val breathingFactor by infiniteTransition.animateFloat(
+        initialValue = 0.88f,
         targetValue = 1.0f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 3500, easing = FastOutSlowInEasing),
+            animation = tween(durationMillis = 4500, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
         ),
-        label = "AlphaPulse"
+        label = "BrightnessPulse"
     )
 
-    val currentGlowAlpha = if (isBreathingEnabled) breathingAlpha * lightBrightness else lightBrightness
+    // Real window brightness; restore system brightness when leaving
+    DisposableEffect(Unit) {
+        val activity = context as? Activity
+        val window = activity?.window
+        val previous = window?.attributes?.screenBrightness
+            ?: WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+        onDispose {
+            if (window != null) {
+                val attrs = window.attributes
+                attrs.screenBrightness = previous
+                window.attributes = attrs
+            }
+        }
+    }
 
-    LazyColumn(
+    LaunchedEffect(lightBrightness, isBreathingEnabled, breathingFactor) {
+        val window = (context as? Activity)?.window ?: return@LaunchedEffect
+        val pulse = if (isBreathingEnabled) breathingFactor else 1f
+        val attrs = window.attributes
+        attrs.screenBrightness = (lightBrightness * pulse).coerceIn(0.01f, 1f)
+        window.attributes = attrs
+    }
+
+    val glowAlpha = if (isBreathingEnabled) {
+        0.55f + 0.35f * breathingFactor
+    } else {
+        0.85f
+    }
+
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF100C16))
-            .padding(16.dp)
-            .testTag("sleep_sound_screen"),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+            .testTag("sleep_sound_screen")
     ) {
-        // Top Header
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.weight(1f)
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .testTag("night_light_surface")
+                .background(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            selectedLightColor.glowColor.copy(
+                                alpha = glowAlpha * lightBrightness.coerceIn(0.2f, 1f)
+                            ),
+                            selectedLightColor.color.copy(
+                                alpha = glowAlpha * 0.75f * lightBrightness.coerceIn(0.15f, 1f)
+                            ),
+                            Color(0xFF0A0810)
+                        )
+                    )
+                )
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
                 ) {
+                    showControls = !showControls
+                }
+        ) {
+            // Minimal status when controls hidden
+            if (!showControls) {
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .windowInsetsPadding(WindowInsets.safeDrawing)
+                        .padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = if (isPlaying) "${activeSound.icon} ${activeSound.title}"
+                        else if (isPaused) "Paused · tap for controls"
+                        else "Tap for controls",
+                        color = Color.White.copy(alpha = 0.7f),
+                        fontSize = 13.sp,
+                        textAlign = TextAlign.Center
+                    )
+                    if (remainingTimerMillis > 0) {
+                        val totalSec = remainingTimerMillis / 1000
+                        Text(
+                            text = String.format(
+                                Locale.US,
+                                "%02d:%02d left",
+                                totalSec / 60,
+                                totalSec % 60
+                            ),
+                            color = Color.White.copy(alpha = 0.55f),
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+            }
+        }
+
+        AnimatedVisibility(
+            visible = showControls,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.28f))
+                    .windowInsetsPadding(WindowInsets.safeDrawing)
+                    .padding(16.dp)
+                    .verticalScroll(rememberScrollState())
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) { /* consume — don't toggle when interacting with panel */ }
+            ) {
+                // Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Sleep Sound",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                        Text(
+                            text = "Tap glow to hide controls",
+                            fontSize = 11.sp,
+                            color = Color.White.copy(alpha = 0.65f)
+                        )
+                    }
+
+                    FilterChip(
+                        selected = keepScreenAwake,
+                        onClick = {
+                            keepScreenAwake = !keepScreenAwake
+                            SleepSoundPrefs.setKeepAwake(context, keepScreenAwake)
+                        },
+                        label = {
+                            Text(
+                                text = if (keepScreenAwake) "Keep awake" else "Allow sleep",
+                                fontSize = 11.sp
+                            )
+                        },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = Color(0xFF4A2838),
+                            selectedLabelColor = Color(0xFFFFACCE),
+                            containerColor = Color(0xFF2A2235),
+                            labelColor = Color.White
+                        )
+                    )
+
                     IconButton(
                         onClick = onNavigateBack,
                         modifier = Modifier.testTag("btn_back_from_sleep_sound")
                     ) {
                         Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back",
-                            tint = Color(0xFFFFD8E4)
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Column {
-                        Text(
-                            text = "SLEEP & NIGHT LIGHT 🌙",
-                            fontSize = 17.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFFFFD8E4)
-                        )
-                        Text(
-                            text = "Crib-side white noise machine and ambient glow",
-                            fontSize = 11.sp,
-                            color = Color(0xFFCBBBC3)
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Dismiss",
+                            tint = Color.White
                         )
                     }
                 }
 
-                FilterChip(
-                    selected = keepScreenAwake,
-                    onClick = { keepScreenAwake = !keepScreenAwake },
-                    label = {
-                        Text(
-                            text = if (keepScreenAwake) "Awake On" else "Dim Off",
-                            fontSize = 11.sp
-                        )
-                    },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.NightlightRound,
-                            contentDescription = "Awake",
-                            modifier = Modifier.size(14.dp)
-                        )
-                    },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = Color(0xFF4A2838),
-                        selectedLabelColor = Color(0xFFFFACCE)
-                    )
-                )
-            }
-        }
+                Spacer(modifier = Modifier.height(20.dp))
 
-        // Night Light Glowing Surface Banner
-        item {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(200.dp)
-                    .testTag("night_light_surface"),
-                shape = RoundedCornerShape(24.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            brush = Brush.radialGradient(
-                                colors = listOf(
-                                    selectedLightColor.glowColor.copy(alpha = currentGlowAlpha),
-                                    selectedLightColor.color.copy(alpha = currentGlowAlpha * 0.8f),
-                                    Color(0xFF1B1425)
-                                )
-                            )
-                        )
-                        .padding(20.dp),
-                    contentAlignment = Alignment.BottomStart
+                // Big play / pause
+                val soundActive = isPlaying || isPaused
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Column {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "💡 Night Light Glow: ${selectedLightColor.name}",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White
-                            )
-
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = "Pulse",
-                                    fontSize = 11.sp,
-                                    color = Color.White.copy(alpha = 0.8f)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Switch(
-                                    checked = isBreathingEnabled,
-                                    onCheckedChange = { isBreathingEnabled = it },
-                                    modifier = Modifier.size(28.dp),
-                                    colors = SwitchDefaults.colors(
-                                        checkedThumbColor = Color.White,
-                                        checkedTrackColor = selectedLightColor.color
-                                    )
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
+                    Text(
+                        text = selectedSound.icon,
+                        fontSize = 42.sp
+                    )
+                    Text(
+                        text = selectedSound.title,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White
+                    )
+                    if (remainingTimerMillis > 0) {
+                        val totalSec = remainingTimerMillis / 1000
                         Text(
-                            text = "Brightness Level: ${(lightBrightness * 100).toInt()}%",
-                            fontSize = 11.sp,
-                            color = Color.White.copy(alpha = 0.9f)
+                            text = String.format(
+                                Locale.US,
+                                "⏱ %02d:%02d",
+                                totalSec / 60,
+                                totalSec % 60
+                            ),
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Color(0xFFB3E5FC),
+                            modifier = Modifier.padding(top = 4.dp)
                         )
+                    }
 
-                        Slider(
-                            value = lightBrightness,
-                            onValueChange = { lightBrightness = it },
-                            valueRange = 0.1f..1.0f,
-                            colors = SliderDefaults.colors(
-                                thumbColor = Color.White,
-                                activeTrackColor = selectedLightColor.glowColor,
-                                inactiveTrackColor = Color.White.copy(alpha = 0.3f)
-                            )
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Button(
+                        onClick = {
+                            when {
+                                isPlaying -> BabySoundSynthesizer.pauseSound()
+                                isPaused -> BabySoundSynthesizer.resumeSound()
+                                else -> {
+                                    BabySoundSynthesizer.playSound(selectedSound)
+                                    SleepSoundPrefs.setSoundType(context, selectedSound)
+                                    if (selectedTimerMinutes > 0) {
+                                        BabySoundSynthesizer.startSleepTimer(selectedTimerMinutes)
+                                    }
+                                }
+                            }
+                        },
+                        modifier = Modifier
+                            .size(72.dp),
+                        shape = CircleShape,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color.White.copy(alpha = 0.92f),
+                            contentColor = Color(0xFF1A1220)
+                        )
+                    ) {
+                        Icon(
+                            imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                            contentDescription = if (isPlaying) "Pause" else "Play",
+                            modifier = Modifier.size(36.dp)
+                        )
+                    }
+
+                    if (soundActive) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Stop",
+                            color = Color.White.copy(alpha = 0.8f),
+                            fontSize = 13.sp,
+                            modifier = Modifier
+                                .clickable { BabySoundSynthesizer.stopSound() }
+                                .padding(8.dp)
                         )
                     }
                 }
-            }
-        }
 
-        // Night Light Color Presets Row
-        item {
-            Column {
-                Text(
-                    text = "NIGHT LIGHT COLOR PALETTE",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFFA28EA0),
-                    letterSpacing = 0.8.sp
-                )
+                Spacer(modifier = Modifier.height(20.dp))
+
+                // Volume
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.VolumeUp,
+                        contentDescription = null,
+                        tint = Color.White.copy(alpha = 0.85f),
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "${(volume * 100).toInt()}%",
+                        fontSize = 12.sp,
+                        color = Color.White.copy(alpha = 0.85f),
+                        modifier = Modifier.width(40.dp)
+                    )
+                    Slider(
+                        value = volume,
+                        onValueChange = { BabySoundSynthesizer.setVolume(it) },
+                        valueRange = 0f..1f,
+                        modifier = Modifier.weight(1f),
+                        colors = SliderDefaults.colors(
+                            thumbColor = Color.White,
+                            activeTrackColor = Color.White.copy(alpha = 0.85f),
+                            inactiveTrackColor = Color.White.copy(alpha = 0.25f)
+                        )
+                    )
+                }
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                // Sound selection
+                Text(
+                    text = "SOUNDS",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White.copy(alpha = 0.55f),
+                    letterSpacing = 0.8.sp
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                SoundType.entries.forEach { sound ->
+                    val isCurrent = activeSound == sound && (isPlaying || isPaused)
+                    val isSelected = selectedSound == sound
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 3.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(
+                                when {
+                                    isCurrent -> Color.White.copy(alpha = 0.22f)
+                                    isSelected -> Color.White.copy(alpha = 0.12f)
+                                    else -> Color.White.copy(alpha = 0.06f)
+                                }
+                            )
+                            .clickable {
+                                selectedSound = sound
+                                SleepSoundPrefs.setSoundType(context, sound)
+                                if (isPlaying || isPaused) {
+                                    BabySoundSynthesizer.playSound(sound)
+                                }
+                            }
+                            .padding(horizontal = 12.dp, vertical = 10.dp)
+                            .testTag("sound_card_${sound.name}"),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(sound.icon, fontSize = 20.sp)
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = sound.title,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color.White
+                            )
+                            Text(
+                                text = sound.description,
+                                fontSize = 11.sp,
+                                color = Color.White.copy(alpha = 0.6f)
+                            )
+                        }
+                        if (isCurrent && isPlaying) {
+                            Icon(
+                                imageVector = Icons.Default.Pause,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Timer
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Timer,
+                        contentDescription = null,
+                        tint = Color(0xFFB3E5FC),
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "AUTO-OFF",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White.copy(alpha = 0.55f),
+                        letterSpacing = 0.8.sp
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                val timerOptions = listOf(0, 15, 30, 45, 60, 90, 120)
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(timerOptions) { mins ->
+                        val isSelected = selectedTimerMinutes == mins
+                        FilterChip(
+                            selected = isSelected,
+                            onClick = {
+                                selectedTimerMinutes = mins
+                                BabySoundSynthesizer.startSleepTimer(mins)
+                                SleepSoundPrefs.setTimerMinutes(context, mins)
+                                Toast.makeText(
+                                    context,
+                                    if (mins == 0) "Timer off (plays until stopped)"
+                                    else "Auto-off in $mins minutes",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            },
+                            label = {
+                                Text(
+                                    text = when (mins) {
+                                        0 -> "Off"
+                                        90 -> "1.5h"
+                                        120 -> "2h"
+                                        else -> "${mins}m"
+                                    },
+                                    fontSize = 12.sp
+                                )
+                            },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = Color(0xFF0277BD),
+                                selectedLabelColor = Color.White,
+                                containerColor = Color.White.copy(alpha = 0.1f),
+                                labelColor = Color.White
+                            )
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Night light brightness + pulse
+                Text(
+                    text = "NIGHT LIGHT",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White.copy(alpha = 0.55f),
+                    letterSpacing = 0.8.sp
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
+                    Icon(
+                        imageVector = Icons.Default.LightMode,
+                        contentDescription = null,
+                        tint = Color.White.copy(alpha = 0.85f),
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "${(lightBrightness * 100).toInt()}%",
+                        fontSize = 12.sp,
+                        color = Color.White.copy(alpha = 0.85f),
+                        modifier = Modifier.width(40.dp)
+                    )
+                    Slider(
+                        value = lightBrightness,
+                        onValueChange = {
+                            lightBrightness = it
+                            SleepSoundPrefs.setBrightness(context, it)
+                        },
+                        valueRange = 0.01f..1f,
+                        modifier = Modifier.weight(1f),
+                        colors = SliderDefaults.colors(
+                            thumbColor = selectedLightColor.glowColor,
+                            activeTrackColor = selectedLightColor.color,
+                            inactiveTrackColor = Color.White.copy(alpha = 0.25f)
+                        )
+                    )
+                    Text(
+                        text = "Pulse",
+                        fontSize = 11.sp,
+                        color = Color.White.copy(alpha = 0.75f)
+                    )
+                    Switch(
+                        checked = isBreathingEnabled,
+                        onCheckedChange = {
+                            isBreathingEnabled = it
+                            SleepSoundPrefs.setPulseEnabled(context, it)
+                        },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.White,
+                            checkedTrackColor = selectedLightColor.color
+                        )
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     items(NightLightPresets) { preset ->
                         val isSelected = selectedLightColor == preset
                         Box(
                             modifier = Modifier
-                                .size(48.dp)
+                                .size(44.dp)
                                 .clip(CircleShape)
                                 .background(preset.color)
                                 .border(
@@ -313,7 +640,13 @@ fun SleepSoundScreen(
                                     color = if (isSelected) Color.White else Color.Transparent,
                                     shape = CircleShape
                                 )
-                                .clickable { selectedLightColor = preset }
+                                .clickable {
+                                    selectedLightColor = preset
+                                    SleepSoundPrefs.setColorIndex(
+                                        context,
+                                        NightLightPresets.indexOf(preset)
+                                    )
+                                }
                                 .testTag("color_preset_${preset.name}"),
                             contentAlignment = Alignment.Center
                         ) {
@@ -321,262 +654,47 @@ fun SleepSoundScreen(
                                 Icon(
                                     imageVector = Icons.Default.LightMode,
                                     contentDescription = "Selected",
-                                    tint = Color.Black.copy(alpha = 0.7f),
-                                    modifier = Modifier.size(20.dp)
+                                    tint = Color.Black.copy(alpha = 0.55f),
+                                    modifier = Modifier.size(18.dp)
                                 )
                             }
                         }
                     }
                 }
-            }
-        }
 
-        // White Noise Sound Machine Section
-        item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E182A)),
-                shape = RoundedCornerShape(20.dp)
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.VolumeUp,
-                                contentDescription = "Sound",
-                                tint = Color(0xFFFFB2C9)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "SOUND MACHINE SYNTH",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White
-                            )
-                        }
+                Spacer(modifier = Modifier.height(20.dp))
 
-                        if (isPlaying) {
-                            Button(
-                                onClick = { BabySoundSynthesizer.stopSound() },
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE91E63)),
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Pause,
-                                    contentDescription = "Stop",
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Pause", fontSize = 12.sp)
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // Volume slider
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Volume: ${(volume * 100).toInt()}%",
-                            fontSize = 12.sp,
-                            color = Color(0xFFD0BCFF),
-                            modifier = Modifier.width(90.dp)
-                        )
-                        Slider(
-                            value = volume,
-                            onValueChange = { BabySoundSynthesizer.setVolume(it) },
-                            valueRange = 0.0f..1.0f,
-                            modifier = Modifier.weight(1f),
-                            colors = SliderDefaults.colors(
-                                thumbColor = Color(0xFFD0BCFF),
-                                activeTrackColor = Color(0xFFD0BCFF)
-                            )
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    // Sound Selection List
-                    SoundType.entries.forEach { sound ->
-                        val isCurrentSound = activeSound == sound && isPlaying
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp)
-                                .clickable {
-                                    if (isCurrentSound) {
-                                        BabySoundSynthesizer.stopSound()
-                                    } else {
-                                        BabySoundSynthesizer.playSound(sound)
-                                    }
-                                }
-                                .testTag("sound_card_${sound.name}"),
-                            colors = CardDefaults.cardColors(
-                                containerColor = if (isCurrentSound) Color(0xFF38233C) else Color(0xFF272036)
-                            ),
-                            border = if (isCurrentSound) androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFF83A8)) else null,
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(12.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Text(sound.icon, fontSize = 22.sp)
-                                    Spacer(modifier = Modifier.width(12.dp))
-                                    Column {
-                                        Text(
-                                            text = sound.title,
-                                            fontSize = 13.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = Color.White
-                                        )
-                                        Text(
-                                            text = sound.description,
-                                            fontSize = 11.sp,
-                                            color = Color(0xFFCBBBC3)
-                                        )
-                                    }
-                                }
-
-                                Icon(
-                                    imageVector = if (isCurrentSound) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                    contentDescription = "Toggle",
-                                    tint = if (isCurrentSound) Color(0xFFFF83A8) else Color.White,
-                                    modifier = Modifier.size(24.dp)
-                                )
-                            }
-                        }
-                    }
+                Button(
+                    onClick = {
+                        viewModel.startLiveActivity(ActivityTypes.SLEEP)
+                        Toast.makeText(context, "Started Live Sleep Session", Toast.LENGTH_SHORT)
+                            .show()
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .testTag("btn_log_sleep_from_sound_machine"),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.White.copy(alpha = 0.18f),
+                        contentColor = Color.White
+                    )
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Bedtime,
+                        contentDescription = null,
+                        tint = Color.White
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Start Live Sleep Session",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
                 }
+
+                Spacer(modifier = Modifier.height(24.dp))
             }
-        }
-
-        // Sleep Auto-Off Timer Section
-        item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E182A)),
-                shape = RoundedCornerShape(20.dp)
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.Timer,
-                                contentDescription = "Timer",
-                                tint = Color(0xFF81D4FA)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "AUTO-OFF SLEEP TIMER",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White
-                            )
-                        }
-
-                        if (remainingTimerMillis > 0) {
-                            val totalSec = remainingTimerMillis / 1000
-                            val mins = totalSec / 60
-                            val secs = totalSec % 60
-                            val countdownText = String.format(Locale.US, "%02d:%02d", mins, secs)
-                            Text(
-                                text = "⏳ $countdownText",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF81D4FA)
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    val timerOptions = listOf(0, 15, 30, 45, 60)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        timerOptions.forEach { mins ->
-                            val isSelected = selectedTimerMinutes == mins
-                            FilterChip(
-                                selected = isSelected,
-                                onClick = {
-                                    selectedTimerMinutes = mins
-                                    BabySoundSynthesizer.startSleepTimer(mins)
-                                    Toast.makeText(
-                                        context,
-                                        if (mins == 0) "Timer disabled (Continuous)" else "Auto-off in $mins minutes",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
-                                },
-                                label = {
-                                    Text(
-                                        text = if (mins == 0) "Off" else "${mins}m",
-                                        fontSize = 12.sp
-                                    )
-                                },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = Color(0xFF0288D1),
-                                    selectedLabelColor = Color.White,
-                                    containerColor = Color(0xFF2B223B),
-                                    labelColor = Color.White
-                                )
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        // Quick Log Sleep Action
-        item {
-            Button(
-                onClick = {
-                    viewModel.startLiveActivity(ActivityTypes.SLEEP)
-                    Toast.makeText(context, "Started Live Sleep Session 😴", Toast.LENGTH_SHORT).show()
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(52.dp)
-                    .testTag("btn_log_sleep_from_sound_machine"),
-                shape = RoundedCornerShape(16.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7E57C2))
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Bedtime,
-                    contentDescription = "Sleep",
-                    tint = Color.White
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "Start Live Sleep Session in App 😴",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                )
-            }
-        }
-
-        item {
-            Spacer(modifier = Modifier.height(24.dp))
         }
     }
 }

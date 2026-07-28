@@ -5,6 +5,7 @@ import com.example.data.database.BabyCareDatabase
 import com.example.data.model.ActivityLog
 import com.example.data.model.ActivityTypes
 import com.example.data.model.BabyProfile
+import com.example.engine.BluetoothCareEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -17,6 +18,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Calendar
+import java.util.UUID
 
 data class WidgetUiState(
     val babyName: String = "Your Baby",
@@ -196,7 +198,13 @@ object BabyCareWidgetViewModel {
                 val now = System.currentTimeMillis()
                 if (ongoing != null) {
                     val durationSec = (now - ongoing.startTimeMillis) / 1000
-                    dao.updateLog(ongoing.copy(endTimeMillis = now, durationSeconds = durationSec))
+                    val stopped = ongoing.copy(
+                        endTimeMillis = now,
+                        durationSeconds = durationSec,
+                        updatedAtMillis = now
+                    )
+                    dao.updateLog(stopped)
+                    BluetoothCareEngine.broadcastLogUpsert(stopped)
                 }
                 val newLog = ActivityLog(
                     babyId = 1,
@@ -206,9 +214,12 @@ object BabyCareWidgetViewModel {
                     caregiverName = "Widget Quick Care",
                     caregiverRole = "Caregiver",
                     timestampMillis = now,
-                    notes = "Logged via Widget Shortcut"
+                    notes = "Logged via Widget Shortcut",
+                    syncId = UUID.randomUUID().toString(),
+                    updatedAtMillis = now
                 )
-                dao.insertLog(newLog)
+                val rowId = dao.insertLog(newLog)
+                BluetoothCareEngine.broadcastLogUpsert(newLog.copy(id = rowId))
                 WidgetLogger.log(context, "Started Sleep via BabyCareWidgetViewModel")
             } catch (e: Exception) {
                 WidgetLogger.log(context, "Error starting sleep in ViewModel", isError = true, throwable = e)
@@ -226,7 +237,13 @@ object BabyCareWidgetViewModel {
                 val now = System.currentTimeMillis()
                 if (ongoing != null) {
                     val durationSec = (now - ongoing.startTimeMillis) / 1000
-                    dao.updateLog(ongoing.copy(endTimeMillis = now, durationSeconds = durationSec))
+                    val stopped = ongoing.copy(
+                        endTimeMillis = now,
+                        durationSeconds = durationSec,
+                        updatedAtMillis = now
+                    )
+                    dao.updateLog(stopped)
+                    BluetoothCareEngine.broadcastLogUpsert(stopped)
                 }
                 val newLog = ActivityLog(
                     babyId = 1,
@@ -236,9 +253,12 @@ object BabyCareWidgetViewModel {
                     caregiverName = "Widget Quick Care",
                     caregiverRole = "Caregiver",
                     timestampMillis = now,
-                    notes = "Logged via Widget Shortcut"
+                    notes = "Logged via Widget Shortcut",
+                    syncId = UUID.randomUUID().toString(),
+                    updatedAtMillis = now
                 )
-                dao.insertLog(newLog)
+                val rowId = dao.insertLog(newLog)
+                BluetoothCareEngine.broadcastLogUpsert(newLog.copy(id = rowId))
                 WidgetLogger.log(context, "Started Breastfeeding via BabyCareWidgetViewModel")
             } catch (e: Exception) {
                 WidgetLogger.log(context, "Error starting breastfeeding in ViewModel", isError = true, throwable = e)
@@ -256,7 +276,13 @@ object BabyCareWidgetViewModel {
                 val now = System.currentTimeMillis()
                 if (ongoing != null) {
                     val durationSec = (now - ongoing.startTimeMillis) / 1000
-                    dao.updateLog(ongoing.copy(endTimeMillis = now, durationSeconds = durationSec))
+                    val stopped = ongoing.copy(
+                        endTimeMillis = now,
+                        durationSeconds = durationSec,
+                        updatedAtMillis = now
+                    )
+                    dao.updateLog(stopped)
+                    BluetoothCareEngine.broadcastLogUpsert(stopped)
                 }
                 val newLog = ActivityLog(
                     babyId = 1,
@@ -268,9 +294,12 @@ object BabyCareWidgetViewModel {
                     caregiverName = "Widget Quick Care",
                     caregiverRole = "Caregiver",
                     timestampMillis = now,
-                    notes = "Logged via Widget Shortcut"
+                    notes = "Logged via Widget Shortcut",
+                    syncId = UUID.randomUUID().toString(),
+                    updatedAtMillis = now
                 )
-                dao.insertLog(newLog)
+                val rowId = dao.insertLog(newLog)
+                BluetoothCareEngine.broadcastLogUpsert(newLog.copy(id = rowId))
                 WidgetLogger.log(context, "Started Bottle Feed via BabyCareWidgetViewModel")
             } catch (e: Exception) {
                 WidgetLogger.log(context, "Error starting feed in ViewModel", isError = true, throwable = e)
@@ -288,7 +317,13 @@ object BabyCareWidgetViewModel {
                 if (ongoing != null) {
                     val now = System.currentTimeMillis()
                     val durationSec = (now - ongoing.startTimeMillis) / 1000
-                    dao.updateLog(ongoing.copy(endTimeMillis = now, durationSeconds = durationSec))
+                    val stopped = ongoing.copy(
+                        endTimeMillis = now,
+                        durationSeconds = durationSec,
+                        updatedAtMillis = now
+                    )
+                    dao.updateLog(stopped)
+                    BluetoothCareEngine.broadcastLogUpsert(stopped)
                     WidgetLogger.log(context, "Stopped live activity ${ongoing.activityType} via ViewModel")
                 }
             } catch (e: Exception) {
@@ -311,7 +346,12 @@ object BabyCareWidgetViewModel {
                     } else {
                         "$currentNotes [Paused]"
                     }
-                    dao.updateLog(ongoing.copy(notes = updatedNotes))
+                    val updated = ongoing.copy(
+                        notes = updatedNotes,
+                        updatedAtMillis = System.currentTimeMillis()
+                    )
+                    dao.updateLog(updated)
+                    BluetoothCareEngine.broadcastLogUpsert(updated)
                     WidgetLogger.log(context, "Toggled pause status on activity ${ongoing.activityType}")
                 }
             } catch (e: Exception) {

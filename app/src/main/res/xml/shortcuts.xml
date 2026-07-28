@@ -3,7 +3,7 @@
     <shortcut
         android:shortcutId="log_feed"
         android:enabled="true"
-        android:icon="@drawable/ic_launcher_foreground"
+        android:icon="@drawable/ic_shortcut_feed"
         android:shortcutShortLabel="@string/shortcut_feed_short"
         android:shortcutLongLabel="@string/shortcut_feed_long">
         <intent
@@ -14,9 +14,22 @@
         </intent>
     </shortcut>
     <shortcut
+        android:shortcutId="log_nurse"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_nurse"
+        android:shortcutShortLabel="@string/shortcut_nurse_short"
+        android:shortcutLongLabel="@string/shortcut_nurse_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.aistudio.babycarelive.bclive"
+            android:targetClass="com.example.MainActivity">
+            <extra android:name="quick_action" android:value="LOG_NURSE" />
+        </intent>
+    </shortcut>
+    <shortcut
         android:shortcutId="log_sleep"
         android:enabled="true"
-        android:icon="@drawable/ic_launcher_foreground"
+        android:icon="@drawable/ic_shortcut_sleep"
         android:shortcutShortLabel="@string/shortcut_sleep_short"
         android:shortcutLongLabel="@string/shortcut_sleep_long">
         <intent
@@ -29,7 +42,7 @@
     <shortcut
         android:shortcutId="log_diaper"
         android:enabled="true"
-        android:icon="@drawable/ic_launcher_foreground"
+        android:icon="@drawable/ic_shortcut_diaper"
         android:shortcutShortLabel="@string/shortcut_diaper_short"
         android:shortcutLongLabel="@string/shortcut_diaper_long">
         <intent

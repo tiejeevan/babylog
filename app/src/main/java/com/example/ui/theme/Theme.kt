@@ -33,10 +33,17 @@ private val LightColorScheme = lightColorScheme(
 
 private val DarkColorScheme = darkColorScheme(
     primary = BabyCoralPrimaryDark,
+    onPrimary = Color(0xFF5C1800),
     primaryContainer = Color(0xFF73200B),
+    onPrimaryContainer = Color(0xFFFFDBCD),
     secondary = BabyTealSecondaryDark,
+    onSecondary = Color(0xFF003731),
     secondaryContainer = Color(0xFF005047),
+    onSecondaryContainer = Color(0xFFB2DFDB),
     tertiary = BabyAmberTertiaryDark,
+    onTertiary = Color(0xFF3E2E00),
+    tertiaryContainer = Color(0xFF5C4400),
+    onTertiaryContainer = Color(0xFFFFECB3),
     background = DarkBackground,
     surface = DarkSurface,
     surfaceVariant = DarkSurfaceVariant,
