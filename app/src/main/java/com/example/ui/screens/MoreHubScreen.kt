@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.NightlightRound
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.PhotoLibrary
@@ -48,7 +49,8 @@ enum class MoreDestination {
     MEMORIES,
     NOTES_LISTS,
     REMINDERS,
-    FAMILY
+    FAMILY,
+    VOICE_COMMANDS
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -108,6 +110,9 @@ fun MoreHubScreen(
                 )
             }
         }
+        MoreDestination.VOICE_COMMANDS -> VoiceCommandsScreen(
+            onNavigateBack = { onDestinationChange(MoreDestination.HUB) }
+        )
     }
 }
 
@@ -183,6 +188,13 @@ private fun MoreHubHome(
             icon = Icons.Default.Alarm,
             testTag = "more_reminders",
             onClick = { onOpen(MoreDestination.REMINDERS) }
+        )
+        MoreHubTile(
+            title = "Voice Commands",
+            subtitle = "Hands-free diaper & feeding logs",
+            icon = Icons.Default.Mic,
+            testTag = "more_voice_commands",
+            onClick = { onOpen(MoreDestination.VOICE_COMMANDS) }
         )
         MoreHubTile(
             title = "Family & Care Sync",

@@ -1,6 +1,9 @@
 package com.example
 
+import android.Manifest
 import android.app.Application
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
@@ -9,7 +12,9 @@ import com.example.data.repository.BabyCareRepository
 import com.example.engine.BabySoundSynthesizer
 import com.example.engine.BluetoothCareEngine
 import com.example.engine.ReminderEngine
+import com.example.engine.VoiceCommandPrefs
 import com.example.notification.BabyNotificationManager
+import com.example.service.VoiceCommandForegroundService
 import com.example.widget.BabyCareWidgetViewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -26,6 +31,8 @@ class BabyCareApplication : Application() {
         ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onStart(owner: LifecycleOwner) {
                 BluetoothCareEngine.setAppInForeground(true)
+                // Microphone FGS may only start while the app is foreground-eligible.
+                maybeRestartVoiceListening()
             }
 
             override fun onStop(owner: LifecycleOwner) {
@@ -37,5 +44,15 @@ class BabyCareApplication : Application() {
             val repository = BabyCareRepository(dao)
             ReminderEngine.rescheduleAll(this@BabyCareApplication, repository)
         }
+    }
+
+    private fun maybeRestartVoiceListening() {
+        if (!VoiceCommandPrefs.isEnabled(this)) return
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            return
+        }
+        VoiceCommandForegroundService.start(this)
     }
 }

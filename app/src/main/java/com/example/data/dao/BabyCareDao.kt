@@ -266,6 +266,9 @@ interface BabyCareDao {
     @Query("SELECT * FROM caregiver_profiles WHERE isActiveNow = 1 LIMIT 1")
     fun getActiveCaregiverFlow(): Flow<CaregiverProfile?>
 
+    @Query("SELECT * FROM caregiver_profiles WHERE isActiveNow = 1 LIMIT 1")
+    suspend fun getActiveCaregiver(): CaregiverProfile?
+
     @Query("SELECT * FROM caregiver_profiles WHERE id = :id LIMIT 1")
     suspend fun getCaregiverById(id: Long): CaregiverProfile?
 

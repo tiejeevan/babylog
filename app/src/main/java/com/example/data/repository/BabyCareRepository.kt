@@ -55,6 +55,10 @@ class BabyCareRepository(private val dao: BabyCareDao) {
 
     suspend fun getBabyProfileDirect(): BabyProfile? = dao.getBabyProfile()
 
+    suspend fun getActiveCaregiverDirect(): CaregiverProfile? = dao.getActiveCaregiver()
+
+    suspend fun getOngoingActivityDirect(): ActivityLog? = dao.getOngoingActivity()
+
     suspend fun saveProfile(profile: BabyProfile): BabyProfile {
         val prepared = profile.copy(
             updatedAtMillis = System.currentTimeMillis()

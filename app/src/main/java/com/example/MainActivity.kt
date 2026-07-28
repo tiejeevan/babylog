@@ -69,6 +69,7 @@ class MainActivity : ComponentActivity() {
     private val quickActionState = mutableStateOf<String?>(null)
     private val openSleepSoundState = mutableStateOf(false)
     private val openPeerChatState = mutableStateOf(false)
+    private val openVoiceCommandsState = mutableStateOf(false)
 
     private val requestPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
@@ -96,11 +97,14 @@ class MainActivity : ComponentActivity() {
             intent?.getBooleanExtra(SleepSoundForegroundService.EXTRA_OPEN_SLEEP_SOUND, false) == true
         openPeerChatState.value =
             intent?.getBooleanExtra(BabyNotificationManager.EXTRA_OPEN_PEER_CHAT, false) == true
+        openVoiceCommandsState.value =
+            intent?.getBooleanExtra(BabyNotificationManager.EXTRA_OPEN_VOICE_COMMANDS, false) == true
         registerDynamicShortcuts()
 
         setContent {
             val openSleepSound by openSleepSoundState
             val openPeerChat by openPeerChatState
+            val openVoiceCommands by openVoiceCommandsState
             val quickAction by quickActionState
             BabyCareTheme {
                 MainScreen(
@@ -111,6 +115,8 @@ class MainActivity : ComponentActivity() {
                     onOpenSleepSoundHandled = { openSleepSoundState.value = false },
                     openPeerChat = openPeerChat,
                     onOpenPeerChatHandled = { openPeerChatState.value = false },
+                    openVoiceCommands = openVoiceCommands,
+                    onOpenVoiceCommandsHandled = { openVoiceCommandsState.value = false },
                     onQuitApp = { finish() },
                     onMoveToBackground = { moveTaskToBack(true) }
                 )
@@ -127,6 +133,9 @@ class MainActivity : ComponentActivity() {
         }
         if (intent.getBooleanExtra(BabyNotificationManager.EXTRA_OPEN_PEER_CHAT, false)) {
             openPeerChatState.value = true
+        }
+        if (intent.getBooleanExtra(BabyNotificationManager.EXTRA_OPEN_VOICE_COMMANDS, false)) {
+            openVoiceCommandsState.value = true
         }
     }
 
@@ -197,6 +206,8 @@ fun MainScreen(
     onOpenSleepSoundHandled: () -> Unit = {},
     openPeerChat: Boolean = false,
     onOpenPeerChatHandled: () -> Unit = {},
+    openVoiceCommands: Boolean = false,
+    onOpenVoiceCommandsHandled: () -> Unit = {},
     onQuitApp: () -> Unit = {},
     onMoveToBackground: () -> Unit = {}
 ) {
@@ -226,6 +237,17 @@ fun MainScreen(
             isShowingBluetoothScreen = false
             isShowingCareChatScreen = true
             onOpenPeerChatHandled()
+        }
+    }
+
+    LaunchedEffect(openVoiceCommands) {
+        if (openVoiceCommands) {
+            isShowingSleepSoundScreen = false
+            isShowingBluetoothScreen = false
+            isShowingCareChatScreen = false
+            moreDestination = MoreDestination.VOICE_COMMANDS
+            currentDestination = NavDestination.MORE
+            onOpenVoiceCommandsHandled()
         }
     }
 

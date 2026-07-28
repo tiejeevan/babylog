@@ -19,9 +19,12 @@ object BabyNotificationManager {
     /** Dedicated phone-alarm channel (USAGE_ALARM sound, bypass DND). */
     const val CHANNEL_PHONE_ALARMS = "channel_phone_alarms_v1"
     const val CHANNEL_MESSAGES = "channel_care_messages"
+    const val CHANNEL_VOICE_COMMANDS = "channel_voice_commands"
 
     const val EXTRA_OPEN_PEER_CHAT = "open_peer_chat"
+    const val EXTRA_OPEN_VOICE_COMMANDS = "open_voice_commands"
     const val NOTIFICATION_ID_PEER_CHAT = 4300
+    const val NOTIFICATION_ID_VOICE_CONFIRM = 4301
 
     private data class PeerChatLine(
         val senderName: String,
@@ -212,11 +215,95 @@ object BabyNotificationManager {
                 enableVibration(true)
             }
 
+            val voiceChannel = NotificationChannel(
+                CHANNEL_VOICE_COMMANDS,
+                "Voice Care Commands",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "Confirmations when a hands-free voice command is logged"
+                enableVibration(true)
+            }
+
             notificationManager.createNotificationChannel(timerChannel)
             notificationManager.createNotificationChannel(reminderChannel)
             notificationManager.createNotificationChannel(healthChannel)
             notificationManager.createNotificationChannel(phoneAlarmChannel)
             notificationManager.createNotificationChannel(messagesChannel)
+            notificationManager.createNotificationChannel(voiceChannel)
+        }
+    }
+
+    fun showVoiceCommandConfirmation(
+        context: Context,
+        title: String,
+        message: String
+    ) {
+        val app = context.applicationContext
+        createNotificationChannels(app)
+        wakeScreenBriefly(app)
+
+        val confirmActivityIntent = VoiceCommandConfirmActivity.intent(app, title, message)
+        val fullScreenPending = PendingIntent.getActivity(
+            app,
+            NOTIFICATION_ID_VOICE_CONFIRM + 1,
+            confirmActivityIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val openIntent = Intent(app, MainActivity::class.java).apply {
+            action = Intent.ACTION_VIEW
+            putExtra(EXTRA_OPEN_VOICE_COMMANDS, true)
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val contentPending = PendingIntent.getActivity(
+            app,
+            NOTIFICATION_ID_VOICE_CONFIRM,
+            openIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val builder = NotificationCompat.Builder(app, CHANNEL_VOICE_COMMANDS)
+            .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+            .setContentTitle(title)
+            .setContentText(message)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(message))
+            .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setAutoCancel(true)
+            .setOnlyAlertOnce(true)
+            .setContentIntent(contentPending)
+            .setFullScreenIntent(fullScreenPending, true)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setVibrate(longArrayOf(0, 120, 60, 120))
+            .setDefaults(NotificationCompat.DEFAULT_LIGHTS)
+
+        val notificationManager =
+            app.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.notify(NOTIFICATION_ID_VOICE_CONFIRM, builder.build())
+
+        // Also launch directly — more reliable than full-screen intent alone on some OEMs
+        // when a microphone FGS is already holding the process in the foreground.
+        try {
+            app.startActivity(confirmActivityIntent)
+        } catch (_: Exception) {
+        }
+    }
+
+    /** Turns the display on briefly so the caregiver sees the confirmation. */
+    private fun wakeScreenBriefly(context: Context) {
+        try {
+            val power = context.getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
+                ?: return
+            @Suppress("DEPRECATION")
+            val wakeLock = power.newWakeLock(
+                android.os.PowerManager.SCREEN_BRIGHT_WAKE_LOCK or
+                    android.os.PowerManager.ACQUIRE_CAUSES_WAKEUP or
+                    android.os.PowerManager.ON_AFTER_RELEASE,
+                "bbylog:VoiceCommandConfirm"
+            )
+            wakeLock.setReferenceCounted(false)
+            wakeLock.acquire(3_000L)
+        } catch (_: Exception) {
         }
     }
 

@@ -12,6 +12,10 @@ import kotlinx.coroutines.launch
 
 /**
  * Restores care-check and medicine alarms after reboot, package replace, or clock changes.
+ *
+ * Voice listening is not started here: microphone foreground services require a
+ * foreground-eligible process. [VoiceCommandPrefs] remains enabled across reboot and
+ * [com.example.BabyCareApplication] restarts listening when the user next opens the app.
  */
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
