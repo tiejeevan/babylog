@@ -53,12 +53,14 @@ import com.example.data.model.ActivityTypes
 import com.example.data.model.BabyProfile
 import com.example.engine.BluetoothCareEngine
 import com.example.engine.BluetoothConnectionState
+import com.example.engine.IntelligentNeedEngine
 import com.example.ui.components.ActivityLogCard
 import com.example.ui.components.BabyStatusBoard
 import com.example.ui.components.DashboardPatternHighlightCard
 import com.example.ui.components.IntelligentNeedCard
 import com.example.ui.components.LiveActiveTimerCard
 import com.example.ui.components.QuickActionGrid
+import com.example.ui.components.SmartSleepGapPromptCard
 import com.example.ui.components.TodaySummaryBar
 import com.example.ui.components.TopBabyHeader
 import com.example.ui.dialogs.AddGrowthDialog
@@ -67,6 +69,8 @@ import com.example.ui.dialogs.LogBottleDialog
 import com.example.ui.dialogs.LogCustomActionDialog
 import com.example.ui.dialogs.LogDiaperDialog
 import com.example.ui.dialogs.LogMedicineDialog
+import com.example.ui.dialogs.LogNurseDialog
+import com.example.ui.dialogs.LogSleepDialog
 import com.example.ui.dialogs.LogTemperatureDialog
 import com.example.ui.dialogs.OnboardingSetupDialog
 import com.example.ui.viewmodel.BabyCareViewModel
@@ -92,7 +96,6 @@ fun DashboardScreen(
     val todaySummary by viewModel.todaySummary.collectAsStateWithLifecycle()
     val recentLogs by viewModel.recentLogs.collectAsStateWithLifecycle()
     val currentTimeMillis by viewModel.currentTimeMillis.collectAsStateWithLifecycle()
-    val activeDuty by viewModel.activeDuty.collectAsStateWithLifecycle()
     val activeNursingSide by viewModel.activeNursingSide.collectAsStateWithLifecycle()
     val nursingSideStartedAtMillis by viewModel.nursingSideStartedAtMillis.collectAsStateWithLifecycle()
     val dashboardPattern by viewModel.dashboardPatternHighlight.collectAsStateWithLifecycle()
@@ -108,6 +111,10 @@ fun DashboardScreen(
     var activeActionDialog by remember { mutableStateOf<String?>(null) }
     var showSetupProfileDialog by remember { mutableStateOf(false) }
     var editingLog by remember { mutableStateOf<ActivityLog?>(null) }
+    var dismissedSleepPrompt by remember { mutableStateOf(false) }
+    val sleepGapPrompt = remember(recentLogs, ongoingActivity, currentTimeMillis) {
+        IntelligentNeedEngine.detectUnloggedSleepGap(profile, recentLogs, ongoingActivity, currentTimeMillis)
+    }
     var timelinePage by remember { mutableIntStateOf(0) }
     val timelinePageSize = 10
     val timelinePageCount = max(1, (recentLogs.size + timelinePageSize - 1) / timelinePageSize)
@@ -145,15 +152,102 @@ fun DashboardScreen(
 
     // Dialog Handling
     when (activeActionDialog) {
+        ActivityTypes.SLEEP -> {
+            LogSleepDialog(
+                onDismiss = { activeActionDialog = null },
+                onStartLiveTimer = {
+                    viewModel.startLiveActivity(activityType = ActivityTypes.SLEEP)
+                    activeActionDialog = null
+                },
+                onConfirmQuickNap = { durMin ->
+                    val now = System.currentTimeMillis()
+                    val durSec = durMin * 60L
+                    val start = now - (durSec * 1000L)
+                    viewModel.quickLogActivity(
+                        activityType = ActivityTypes.SLEEP,
+                        durationSeconds = durSec,
+                        startTimeMillis = start,
+                        endTimeMillis = now,
+                        notes = "1-Tap Quick Nap (${durMin}m)"
+                    )
+                    activeActionDialog = null
+                    Toast.makeText(context, "Logged ${durMin}m nap 💤", Toast.LENGTH_SHORT).show()
+                },
+                onConfirmPastSleep = { durMin, notes, timestamp ->
+                    val durSec = durMin * 60L
+                    val end = timestamp
+                    val start = end - (durSec * 1000L)
+                    val fullNotes = if (notes.isBlank()) "Nap (${durMin}m)" else "Nap (${durMin}m) — $notes"
+                    viewModel.quickLogActivity(
+                        activityType = ActivityTypes.SLEEP,
+                        durationSeconds = durSec,
+                        startTimeMillis = start,
+                        endTimeMillis = end,
+                        notes = fullNotes
+                    )
+                    activeActionDialog = null
+                    Toast.makeText(context, "Logged past ${durMin}m nap 💤", Toast.LENGTH_SHORT).show()
+                }
+            )
+        }
+        ActivityTypes.BREASTFEEDING -> {
+            LogNurseDialog(
+                onDismiss = { activeActionDialog = null },
+                onStartLiveTimer = { initialSide ->
+                    viewModel.setNursingSide(initialSide)
+                    viewModel.startLiveActivity(activityType = ActivityTypes.BREASTFEEDING)
+                    activeActionDialog = null
+                },
+                onConfirmQuickNurse = { durMin ->
+                    val now = System.currentTimeMillis()
+                    val durSec = durMin * 60L
+                    val halfSec = durSec / 2
+                    val start = now - (durSec * 1000L)
+                    viewModel.quickLogActivity(
+                        activityType = ActivityTypes.BREASTFEEDING,
+                        durationSeconds = durSec,
+                        startTimeMillis = start,
+                        endTimeMillis = now,
+                        leftBreastSec = halfSec,
+                        rightBreastSec = halfSec,
+                        notes = "1-Tap Quick Nursing (${durMin}m)"
+                    )
+                    activeActionDialog = null
+                    Toast.makeText(context, "Logged ${durMin}m nursing session 🍼", Toast.LENGTH_SHORT).show()
+                },
+                onConfirmPastNurse = { leftMin, rightMin, notes, timestamp ->
+                    val leftSec = leftMin * 60L
+                    val rightSec = rightMin * 60L
+                    val totalSec = leftSec + rightSec
+                    val end = timestamp
+                    val start = end - (totalSec * 1000L)
+                    val sideNotes = "Nursing (L: ${leftMin}m, R: ${rightMin}m)"
+                    val fullNotes = if (notes.isBlank()) sideNotes else "$sideNotes — $notes"
+                    viewModel.quickLogActivity(
+                        activityType = ActivityTypes.BREASTFEEDING,
+                        durationSeconds = totalSec,
+                        startTimeMillis = start,
+                        endTimeMillis = end,
+                        leftBreastSec = leftSec,
+                        rightBreastSec = rightSec,
+                        notes = fullNotes
+                    )
+                    activeActionDialog = null
+                    Toast.makeText(context, "Logged past nursing session 🍼", Toast.LENGTH_SHORT).show()
+                }
+            )
+        }
         ActivityTypes.BOTTLE -> {
             LogBottleDialog(
                 onDismiss = { activeActionDialog = null },
-                onConfirm = { vol, milkType, notes ->
+                onConfirm = { vol, milkType, notes, timestamp ->
                     viewModel.quickLogActivity(
                         activityType = ActivityTypes.BOTTLE,
                         volumeMl = vol,
                         milkType = milkType,
-                        notes = notes
+                        notes = notes,
+                        startTimeMillis = timestamp,
+                        endTimeMillis = timestamp
                     )
                     activeActionDialog = null
                 }
@@ -162,11 +256,13 @@ fun DashboardScreen(
         ActivityTypes.DIAPER -> {
             LogDiaperDialog(
                 onDismiss = { activeActionDialog = null },
-                onConfirm = { status, notes ->
+                onConfirm = { status, notes, timestamp ->
                     viewModel.quickLogActivity(
                         activityType = ActivityTypes.DIAPER,
                         diaperStatus = status,
-                        notes = notes
+                        notes = notes,
+                        startTimeMillis = timestamp,
+                        endTimeMillis = timestamp
                     )
                     activeActionDialog = null
                 }
@@ -175,12 +271,14 @@ fun DashboardScreen(
         ActivityTypes.MEDICINE -> {
             LogMedicineDialog(
                 onDismiss = { activeActionDialog = null },
-                onConfirm = { name, dosage, notes ->
+                onConfirm = { name, dosage, notes, timestamp ->
                     viewModel.quickLogActivity(
                         activityType = ActivityTypes.MEDICINE,
                         medicineName = name,
                         dosage = dosage,
-                        notes = notes
+                        notes = notes,
+                        startTimeMillis = timestamp,
+                        endTimeMillis = timestamp
                     )
                     activeActionDialog = null
                 }
@@ -189,11 +287,13 @@ fun DashboardScreen(
         ActivityTypes.TEMPERATURE -> {
             LogTemperatureDialog(
                 onDismiss = { activeActionDialog = null },
-                onConfirm = { temp, notes ->
+                onConfirm = { temp, notes, timestamp ->
                     viewModel.quickLogActivity(
                         activityType = ActivityTypes.TEMPERATURE,
                         temperatureCelsius = temp,
-                        notes = notes
+                        notes = notes,
+                        startTimeMillis = timestamp,
+                        endTimeMillis = timestamp
                     )
                     activeActionDialog = null
                 }
@@ -202,11 +302,13 @@ fun DashboardScreen(
         ActivityTypes.GROWTH -> {
             AddGrowthDialog(
                 onDismiss = { activeActionDialog = null },
-                onConfirm = { w, h, head, notes ->
+                onConfirm = { w, h, head, notes, timestamp ->
                     viewModel.addGrowthRecord(w, h, head, notes)
                     viewModel.quickLogActivity(
                         activityType = ActivityTypes.GROWTH,
-                        notes = "Logged $w kg, $h cm"
+                        notes = "Logged $w kg, $h cm",
+                        startTimeMillis = timestamp,
+                        endTimeMillis = timestamp
                     )
                     activeActionDialog = null
                 }
@@ -215,11 +317,13 @@ fun DashboardScreen(
         ActivityTypes.CUSTOM -> {
             LogCustomActionDialog(
                 onDismiss = { activeActionDialog = null },
-                onConfirm = { title, notes ->
+                onConfirm = { title, notes, timestamp ->
                     val combined = if (notes.isBlank()) title else "$title — $notes"
                     viewModel.quickLogActivity(
                         activityType = ActivityTypes.CUSTOM,
-                        notes = combined
+                        notes = combined,
+                        startTimeMillis = timestamp,
+                        endTimeMillis = timestamp
                     )
                     activeActionDialog = null
                     Toast.makeText(context, "Logged: $title", Toast.LENGTH_SHORT).show()
@@ -249,17 +353,9 @@ fun DashboardScreen(
             item {
                 Column(modifier = Modifier.padding(horizontal = 16.dp)) {
                     BabyStatusBoard(
-                        duty = activeDuty,
                         logs = recentLogs,
                         ongoing = ongoingActivity,
-                        prediction = prediction,
-                        syncStatus = syncStatus,
-                        currentTimeMillis = currentTimeMillis,
-                        activeCaregiverName = activeCaregiver?.name,
-                        onClaimDuty = { viewModel.claimDuty(null) },
-                        onClaimUntil10pm = { viewModel.claimDutyUntilHour(22) },
-                        onClaim1Hour = { viewModel.claimDutyForHours(1) },
-                        onReleaseDuty = { viewModel.releaseDuty() }
+                        currentTimeMillis = currentTimeMillis
                     )
                 }
             }
@@ -281,7 +377,7 @@ fun DashboardScreen(
                             prediction = prediction,
                             onActionClick = { type ->
                                 when (type) {
-                                    ActivityTypes.SLEEP, ActivityTypes.BREASTFEEDING, ActivityTypes.TUMMY_TIME, ActivityTypes.PUMPING -> {
+                                    ActivityTypes.TUMMY_TIME, ActivityTypes.PUMPING -> {
                                         viewModel.startLiveActivity(activityType = type)
                                     }
                                     else -> {
@@ -289,6 +385,30 @@ fun DashboardScreen(
                                     }
                                 }
                             }
+                        )
+                    }
+
+                    if (sleepGapPrompt != null && !dismissedSleepPrompt) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        SmartSleepGapPromptCard(
+                            prompt = sleepGapPrompt,
+                            babyName = profile?.name ?: "Baby",
+                            onQuickLogNap = { durMin ->
+                                val now = System.currentTimeMillis()
+                                val start = sleepGapPrompt.estimatedNapStartMillis
+                                val end = (start + (durMin * 60_000L)).coerceAtMost(now)
+                                val durSec = ((end - start) / 1000L).coerceAtLeast(60L)
+                                viewModel.quickLogActivity(
+                                    activityType = ActivityTypes.SLEEP,
+                                    durationSeconds = durSec,
+                                    startTimeMillis = start,
+                                    endTimeMillis = end,
+                                    notes = "Logged in timeline gap (${durMin}m nap)"
+                                )
+                                dismissedSleepPrompt = true
+                                Toast.makeText(context, "Logged ${durMin}m nap into timeline gap 💤", Toast.LENGTH_SHORT).show()
+                            },
+                            onDismiss = { dismissedSleepPrompt = true }
                         )
                     }
                 }
@@ -300,7 +420,7 @@ fun DashboardScreen(
                     QuickActionGrid(
                         onActionSelected = { type ->
                             when (type) {
-                                ActivityTypes.SLEEP, ActivityTypes.BREASTFEEDING, ActivityTypes.TUMMY_TIME, ActivityTypes.PUMPING, ActivityTypes.BATH -> {
+                                ActivityTypes.TUMMY_TIME, ActivityTypes.PUMPING, ActivityTypes.BATH -> {
                                     viewModel.startLiveActivity(activityType = type)
                                 }
                                 else -> {

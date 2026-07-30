@@ -12,6 +12,12 @@ enum class UrgencyLevel {
     LOW_ALL_GOOD
 }
 
+data class SmartSleepGapPrompt(
+    val estimatedNapStartMillis: Long,
+    val minutesSinceLastActivity: Long,
+    val suggestedDurationsMinutes: List<Int> = listOf(30, 45, 60, 90, 120)
+)
+
 data class BabyNeedPrediction(
     val primaryNeedTitle: String,
     val confidencePercentage: Int,
@@ -194,18 +200,30 @@ object IntelligentNeedEngine {
             )
         }
 
-        // Rule 3: Nap / Sleep window opening up (awake window reached)
+        // Rule 3: Nap / Sleep window opening up (awake window reached) or unconfirmed gap
         if (minutesSinceSleep >= targetSleepInterval) {
             val awakeMin = minutesSinceSleep
-            return BabyNeedPrediction(
-                primaryNeedTitle = "$name Might Be Showing Tired Cues 😴",
-                confidencePercentage = 84,
-                reasoning = "$name has been awake for ${formatMinutes(awakeMin)}. Look for eye rubbing or yawning.",
-                urgencyLevel = UrgencyLevel.MEDIUM_RECOMMENDED,
-                recommendedAction = "Start Nap Routine",
-                timeRemainingMinutes = 0,
-                suggestedActivityType = ActivityTypes.SLEEP
-            )
+            if (awakeMin > targetSleepInterval + 45) {
+                return BabyNeedPrediction(
+                    primaryNeedTitle = "Unconfirmed Awake Gap (${formatMinutes(awakeMin)}) 💤",
+                    confidencePercentage = 80,
+                    reasoning = "Last sleep logged was ${formatMinutes(awakeMin)} ago. Did $name take a nap in between?",
+                    urgencyLevel = UrgencyLevel.MEDIUM_RECOMMENDED,
+                    recommendedAction = "Confirm or Quick-Log Nap",
+                    timeRemainingMinutes = 0,
+                    suggestedActivityType = ActivityTypes.SLEEP
+                )
+            } else {
+                return BabyNeedPrediction(
+                    primaryNeedTitle = "$name Might Be Showing Tired Cues 😴",
+                    confidencePercentage = 84,
+                    reasoning = "$name has been awake for ${formatMinutes(awakeMin)}. Look for eye rubbing or yawning.",
+                    urgencyLevel = UrgencyLevel.MEDIUM_RECOMMENDED,
+                    recommendedAction = "Start Nap Routine",
+                    timeRemainingMinutes = 0,
+                    suggestedActivityType = ActivityTypes.SLEEP
+                )
+            }
         }
 
         // Default: Baby is comfortable
@@ -219,6 +237,32 @@ object IntelligentNeedEngine {
             timeRemainingMinutes = nextFeedMin,
             suggestedActivityType = ActivityTypes.TUMMY_TIME
         )
+    }
+
+    fun detectUnloggedSleepGap(
+        profile: BabyProfile?,
+        logs: List<ActivityLog>,
+        ongoingLog: ActivityLog?,
+        currentTimeMillis: Long = System.currentTimeMillis()
+    ): SmartSleepGapPrompt? {
+        if (ongoingLog != null) return null
+
+        val targetSleepInterval = profile?.targetNapIntervalMinutes ?: 150
+        val completedLogs = logs.filter { it.endTimeMillis != null || it.activityType == ActivityTypes.DIAPER || it.activityType == ActivityTypes.MEDICINE || it.activityType == ActivityTypes.TEMPERATURE }
+
+        val lastSleep = completedLogs.firstOrNull { it.activityType == ActivityTypes.SLEEP }
+        val lastSleepEnd = lastSleep?.let { it.endTimeMillis ?: it.startTimeMillis } ?: (currentTimeMillis - (targetSleepInterval * 60_000L))
+        val minutesSinceSleep = TimeUnit.MILLISECONDS.toMinutes(currentTimeMillis - lastSleepEnd)
+
+        if (minutesSinceSleep > (targetSleepInterval + 30)) {
+            val estimatedStart = lastSleepEnd + (targetSleepInterval * 60_000L)
+            return SmartSleepGapPrompt(
+                estimatedNapStartMillis = estimatedStart,
+                minutesSinceLastActivity = minutesSinceSleep,
+                suggestedDurationsMinutes = listOf(30, 45, 60, 90, 120)
+            )
+        }
+        return null
     }
 
     fun computeTodaySummary(

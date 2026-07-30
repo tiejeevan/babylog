@@ -56,7 +56,7 @@ class CriticalFlowsComposeTest {
             BabyCareTheme {
                 LogBottleDialog(
                     onDismiss = {},
-                    onConfirm = { volume, milk, _ ->
+                    onConfirm = { volume, milk, _, _ ->
                         confirmedVolume = volume
                         confirmedMilk = milk
                     }
@@ -64,7 +64,7 @@ class CriticalFlowsComposeTest {
             }
         }
 
-        composeRule.onNodeWithTag("bottle_volume_input").performTextReplacement("180")
+        composeRule.onNodeWithTag("chip_volume_180").performClick()
         composeRule.onNodeWithTag("chip_milk_Formula").performClick()
         composeRule.onNodeWithTag("confirm_bottle_log").performClick()
 
@@ -80,7 +80,7 @@ class CriticalFlowsComposeTest {
             BabyCareTheme {
                 LogDiaperDialog(
                     onDismiss = {},
-                    onConfirm = { selected, _ -> status = selected }
+                    onConfirm = { selected, _, _ -> status = selected }
                 )
             }
         }

@@ -133,7 +133,7 @@ fun HealthGrowthScreen(viewModel: BabyCareViewModel) {
     if (showAddGrowthDialog) {
         AddGrowthDialog(
             onDismiss = { showAddGrowthDialog = false },
-            onConfirm = { w, h, head, notes ->
+            onConfirm = { w, h, head, notes, _ ->
                 viewModel.addGrowthRecord(w, h, head, notes)
                 showAddGrowthDialog = false
             }

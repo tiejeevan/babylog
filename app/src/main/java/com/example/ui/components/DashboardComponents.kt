@@ -8,6 +8,7 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -1044,17 +1045,10 @@ fun SummaryPill(
 
 @Composable
 fun BabyStatusBoard(
-    duty: com.example.data.model.DutySession?,
     logs: List<ActivityLog>,
     ongoing: ActivityLog?,
-    prediction: BabyNeedPrediction,
-    syncStatus: String,
     currentTimeMillis: Long,
-    activeCaregiverName: String?,
-    onClaimDuty: () -> Unit,
-    onClaimUntil10pm: () -> Unit,
-    onClaim1Hour: () -> Unit,
-    onReleaseDuty: () -> Unit
+    modifier: Modifier = Modifier
 ) {
     val lastFeed = logs.firstOrNull {
         it.activityType == ActivityTypes.BOTTLE || it.activityType == ActivityTypes.BREASTFEEDING
@@ -1064,135 +1058,168 @@ fun BabyStatusBoard(
         it.activityType == ActivityTypes.SLEEP && it.endTimeMillis != null
     }
 
-    val sleepState = when {
+    // Feed formatting
+    val feedTimeText = lastFeed?.let { formatAgo(currentTimeMillis - it.startTimeMillis) } ?: "No feeds"
+    val feedSubtext = when {
+        lastFeed == null -> "Not logged yet"
+        lastFeed.activityType == ActivityTypes.BOTTLE -> {
+            val vol = if (lastFeed.volumeMl > 0) "${lastFeed.volumeMl} ml" else null
+            val milk = lastFeed.milkType?.ifBlank { null }
+            listOfNotNull(milk ?: "Bottle", vol).joinToString(" · ")
+        }
+        lastFeed.activityType == ActivityTypes.BREASTFEEDING -> {
+            val mins = lastFeed.durationSeconds / 60
+            if (mins > 0) "Nurse · ${mins}m" else "Breastfeeding"
+        }
+        else -> "Logged"
+    }
+
+    // Diaper formatting
+    val diaperTimeText = lastDiaper?.let { formatAgo(currentTimeMillis - it.startTimeMillis) } ?: "No diapers"
+    val diaperSubtext = lastDiaper?.diaperStatus?.ifBlank { null } ?: if (lastDiaper != null) "Logged" else "Not logged yet"
+
+    // Sleep formatting
+    val (sleepValue, sleepSubtext) = when {
         ongoing?.activityType == ActivityTypes.SLEEP -> {
             val mins = (currentTimeMillis - ongoing.startTimeMillis) / 60_000L
-            "Sleeping · ${IntelligentNeedEngine.formatMinutes(mins)}"
+            "Sleeping" to "For ${IntelligentNeedEngine.formatMinutes(mins)}"
         }
         lastSleepEnded?.endTimeMillis != null -> {
             val awakeMins = (currentTimeMillis - lastSleepEnded.endTimeMillis!!) / 60_000L
-            "Awake · ${IntelligentNeedEngine.formatMinutes(awakeMins)}"
+            "Awake" to "For ${IntelligentNeedEngine.formatMinutes(awakeMins)}"
         }
-        else -> "Awake"
+        else -> "Awake" to "Ready for routine"
     }
 
-    val dutyLine = when {
-        duty == null || !duty.isActive -> "No one on duty"
-        duty.untilMillis != null -> {
-            val fmt = java.text.SimpleDateFormat("h:mm a", java.util.Locale.getDefault())
-            "${duty.caregiverName} is on duty until ${fmt.format(java.util.Date(duty.untilMillis))}"
-        }
-        else -> "${duty.caregiverName} is on duty"
-    }
-
-    val iAmOnDuty = duty?.isActive == true &&
-        duty.caregiverName.equals(activeCaregiverName, ignoreCase = true)
-
-    Card(
-        modifier = Modifier
+    Column(
+        modifier = modifier
             .fillMaxWidth()
-            .testTag("baby_status_board"),
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f))
+            .testTag("baby_status_board")
     ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-            Text(
-                text = "BABY STATUS BOARD",
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 0.6.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = "BABY STATUS BOARD",
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            letterSpacing = 0.8.sp,
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp)
+        )
 
-            StatusBoardRow(label = "On duty", value = dutyLine)
-            StatusBoardRow(
-                label = "Last feed",
-                value = lastFeed?.let { formatAgo(currentTimeMillis - it.startTimeMillis) } ?: "—"
-            )
-            StatusBoardRow(
-                label = "Last diaper",
-                value = lastDiaper?.let { formatAgo(currentTimeMillis - it.startTimeMillis) } ?: "—"
-            )
-            StatusBoardRow(label = "Sleep", value = sleepState)
-            StatusBoardRow(
-                label = "Next need",
-                value = "${prediction.primaryNeedTitle} · ${prediction.timeRemainingMinutes}m"
-            )
-            Text(
-                text = syncStatus,
-                fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.primary,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.padding(top = 6.dp)
-            )
+        Spacer(modifier = Modifier.height(4.dp))
 
-            Spacer(modifier = Modifier.height(10.dp))
-
-            if (iAmOnDuty) {
-                OutlinedButton(
-                    onClick = onReleaseDuty,
-                    modifier = Modifier.fillMaxWidth().testTag("btn_release_duty"),
-                    shape = RoundedCornerShape(10.dp)
-                ) {
-                    Text("Release duty")
-                }
-            } else {
-                Button(
-                    onClick = onClaimDuty,
-                    modifier = Modifier.fillMaxWidth().testTag("btn_claim_duty"),
-                    shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                ) {
-                    Text("I'm on duty", fontWeight = FontWeight.Bold)
-                }
-                Spacer(modifier = Modifier.height(6.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedButton(
-                        onClick = onClaim1Hour,
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(10.dp)
-                    ) {
-                        Text("1 hour", fontSize = 12.sp)
-                    }
-                    OutlinedButton(
-                        onClick = onClaimUntil10pm,
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(10.dp)
-                    ) {
-                        Text("Until 10pm", fontSize = 12.sp)
-                    }
-                }
-            }
+        // 3 Status Cards in one row
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            StatusSquareCard(
+                title = "Last Feed",
+                value = feedTimeText,
+                subtext = feedSubtext,
+                icon = Icons.Default.WaterDrop,
+                accentColor = FeedingColor,
+                modifier = Modifier.weight(1f),
+                testTag = "status_box_feed"
+            )
+            StatusSquareCard(
+                title = "Last Diaper",
+                value = diaperTimeText,
+                subtext = diaperSubtext,
+                icon = Icons.Default.CleaningServices,
+                accentColor = DiaperColor,
+                modifier = Modifier.weight(1f),
+                testTag = "status_box_diaper"
+            )
+            StatusSquareCard(
+                title = "Sleep Status",
+                value = sleepValue,
+                subtext = sleepSubtext,
+                icon = Icons.Default.NightlightRound,
+                accentColor = SleepColor,
+                modifier = Modifier.weight(1f),
+                testTag = "status_box_sleep"
+            )
         }
     }
 }
 
 @Composable
-private fun StatusBoardRow(label: String, value: String) {
-    Row(
-        modifier = Modifier
+private fun StatusSquareCard(
+    title: String,
+    value: String,
+    subtext: String,
+    icon: ImageVector,
+    accentColor: Color,
+    modifier: Modifier = Modifier,
+    testTag: String? = null
+) {
+    Card(
+        modifier = modifier
             .fillMaxWidth()
-            .padding(vertical = 3.dp),
-        horizontalArrangement = Arrangement.SpaceBetween
+            .then(if (testTag != null) Modifier.testTag(testTag) else Modifier),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = accentColor.copy(alpha = 0.10f)),
+        border = BorderStroke(1.5.dp, accentColor.copy(alpha = 0.25f))
     ) {
-        Text(
-            text = label,
-            fontSize = 13.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Text(
-            text = value,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(start = 12.dp)
-        )
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(10.dp),
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clip(CircleShape)
+                        .background(accentColor),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = title,
+                        tint = Color.White,
+                        modifier = Modifier.size(15.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = title.uppercase(),
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = accentColor,
+                    letterSpacing = 0.4.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = value,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            Spacer(modifier = Modifier.height(2.dp))
+
+            Text(
+                text = subtext,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
     }
 }
 
@@ -1205,6 +1232,73 @@ private fun formatAgo(diffMillis: Long): String {
             val h = mins / 60
             val m = mins % 60
             if (m == 0) "${h}h ago" else "${h}h ${m}m ago"
+        }
+    }
+}
+
+@Composable
+fun SmartSleepGapPromptCard(
+    prompt: com.example.engine.SmartSleepGapPrompt,
+    babyName: String,
+    onQuickLogNap: (durationMinutes: Int) -> Unit,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = com.example.ui.theme.SleepColor.copy(alpha = 0.12f)
+        ),
+        border = BorderStroke(1.5.dp, com.example.ui.theme.SleepColor.copy(alpha = 0.4f))
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "💤",
+                        fontSize = 18.sp
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Did $babyName take an unlogged nap?",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+
+                TextButton(onClick = onDismiss) {
+                    Text("Dismiss", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                }
+            }
+
+            Text(
+                text = "No sleep logged for ${prompt.minutesSinceLastActivity / 60}h ${prompt.minutesSinceLastActivity % 60}m. Quick-log a nap ending just now:",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 2.dp, bottom = 10.dp)
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                prompt.suggestedDurationsMinutes.forEach { duration ->
+                    val label = if (duration < 60) "${duration}m" else if (duration == 60) "1h" else "${duration / 60.0}h"
+                    com.example.ui.dialogs.SquareChoiceChip(
+                        selected = false,
+                        onClick = { onQuickLogNap(duration) },
+                        label = label,
+                        accentColor = com.example.ui.theme.SleepColor,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
         }
     }
 }
