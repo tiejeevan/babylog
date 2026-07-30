@@ -108,6 +108,37 @@ class IntelligentNeedEngineTest {
     }
 
     @Test
+    fun computeDaySummaryCalculatesYesterdayAndPastDatesAccurately() {
+        val now = System.currentTimeMillis()
+        val yesterdayMillis = now - TimeUnit.DAYS.toMillis(1)
+
+        val yesterdayStart = Calendar.getInstance().apply {
+            timeInMillis = yesterdayMillis
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+
+        val yesterdayLog = ActivityLog(
+            activityType = ActivityTypes.BOTTLE,
+            startTimeMillis = yesterdayStart + TimeUnit.HOURS.toMillis(10),
+            volumeMl = 150
+        )
+
+        val summary = IntelligentNeedEngine.computeDaySummary(
+            logs = listOf(yesterdayLog),
+            dayOffset = -1,
+            currentTimeMillis = now
+        )
+
+        assertEquals(-1, summary.dayOffset)
+        assertEquals("YESTERDAY'S ROUTINE SUMMARY", summary.dateLabel)
+        assertEquals(1, summary.feedCount)
+        assertEquals(150, summary.totalFeedVolumeMl)
+    }
+
+    @Test
     fun formatMinutesHandlesHoursAndMinutes() {
         assertEquals("2h 5m", IntelligentNeedEngine.formatMinutes(125))
         assertEquals("3h", IntelligentNeedEngine.formatMinutes(180))

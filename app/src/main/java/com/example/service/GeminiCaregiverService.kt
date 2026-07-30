@@ -17,7 +17,8 @@ class GeminiCaregiverService {
         babyAgeMonths: Double,
         lastFeedingSummary: String,
         lastSleepSummary: String,
-        patternSummary: String = ""
+        patternSummary: String = "",
+        customActivitySummary: String = ""
     ): String = withContext(Dispatchers.IO) {
         val apiKey = try { BuildConfig.GEMINI_API_KEY } catch (e: Throwable) { "" }
 
@@ -30,7 +31,8 @@ class GeminiCaregiverService {
                     babyAgeMonths = babyAgeMonths,
                     lastFeedingSummary = lastFeedingSummary,
                     lastSleepSummary = lastSleepSummary,
-                    patternSummary = patternSummary
+                    patternSummary = patternSummary,
+                    customActivitySummary = customActivitySummary
                 )
                 if (response.isNotBlank()) return@withContext response
             } catch (e: Exception) {
@@ -43,7 +45,8 @@ class GeminiCaregiverService {
             question = userQuestion,
             babyName = babyName,
             ageMonths = babyAgeMonths,
-            patternSummary = patternSummary
+            patternSummary = patternSummary,
+            customActivitySummary = customActivitySummary
         )
     }
 
@@ -54,7 +57,8 @@ class GeminiCaregiverService {
         babyAgeMonths: Double,
         lastFeedingSummary: String,
         lastSleepSummary: String,
-        patternSummary: String
+        patternSummary: String,
+        customActivitySummary: String
     ): String {
         val endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$apiKey"
         val url = URL(endpoint)
@@ -75,9 +79,15 @@ class GeminiCaregiverService {
             ""
         }
 
+        val customBlock = if (customActivitySummary.isNotBlank()) {
+            " $customActivitySummary"
+        } else {
+            ""
+        }
+
         val systemPrompt = "You are BabyCare Live AI, a gentle, highly knowledgeable pediatric nurse & infant care specialist assistant. " +
                 "You assist parents with $babyName (age $ageLabel old). " +
-                "Current baby status context: Feeding ($lastFeedingSummary), Sleep ($lastSleepSummary).$patternBlock " +
+                "Current baby status context: Feeding ($lastFeedingSummary), Sleep ($lastSleepSummary).$patternBlock$customBlock " +
                 "Provide concise, warm, actionable, and safety-focused guidance. Keep answers under 180 words with clear bullet points. " +
                 "When habit pattern data is available, reference it briefly to personalize advice."
 
@@ -116,7 +126,8 @@ class GeminiCaregiverService {
         question: String,
         babyName: String,
         ageMonths: Double,
-        patternSummary: String
+        patternSummary: String,
+        customActivitySummary: String = ""
     ): String {
         val ageLabel = if (ageMonths < 1.0) {
             "${(ageMonths * 30.4375).toInt()} days"
@@ -125,6 +136,8 @@ class GeminiCaregiverService {
         }
         val patternNote = if (patternSummary.isNotBlank()) {
             "\n• **Your logged patterns**: $patternSummary"
+        } else if (customActivitySummary.isNotBlank()) {
+            "\n• **Recent activities**: $customActivitySummary"
         } else {
             ""
         }

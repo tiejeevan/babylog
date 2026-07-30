@@ -53,6 +53,7 @@ import com.example.data.model.ActivityTypes
 import com.example.data.model.BabyProfile
 import com.example.engine.BluetoothCareEngine
 import com.example.engine.BluetoothConnectionState
+import com.example.engine.CustomLogRouter
 import com.example.engine.IntelligentNeedEngine
 import com.example.ui.components.ActivityLogCard
 import com.example.ui.components.BabyStatusBoard
@@ -95,6 +96,7 @@ fun DashboardScreen(
     val prediction by viewModel.needPrediction.collectAsStateWithLifecycle()
     val todaySummary by viewModel.todaySummary.collectAsStateWithLifecycle()
     val recentLogs by viewModel.recentLogs.collectAsStateWithLifecycle()
+    val allLogs by viewModel.allLogs.collectAsStateWithLifecycle()
     val currentTimeMillis by viewModel.currentTimeMillis.collectAsStateWithLifecycle()
     val activeNursingSide by viewModel.activeNursingSide.collectAsStateWithLifecycle()
     val nursingSideStartedAtMillis by viewModel.nursingSideStartedAtMillis.collectAsStateWithLifecycle()
@@ -319,14 +321,24 @@ fun DashboardScreen(
                 onDismiss = { activeActionDialog = null },
                 onConfirm = { title, notes, timestamp ->
                     val combined = if (notes.isBlank()) title else "$title — $notes"
+                    val routed = CustomLogRouter.route(title, notes)
                     viewModel.quickLogActivity(
-                        activityType = ActivityTypes.CUSTOM,
-                        notes = combined,
+                        activityType = routed.activityType,
+                        diaperStatus = routed.diaperStatus,
+                        volumeMl = routed.volumeMl,
+                        durationSeconds = if (routed.durationSeconds > 0) routed.durationSeconds else 600,
+                        notes = routed.notes,
                         startTimeMillis = timestamp,
                         endTimeMillis = timestamp
                     )
                     activeActionDialog = null
-                    Toast.makeText(context, "Logged: $title", Toast.LENGTH_SHORT).show()
+                    val toastMsg = if (routed.activityType != ActivityTypes.CUSTOM) {
+                        val label = routed.activityType.lowercase().replaceFirstChar { it.uppercase() }
+                        "Categorized as $label ✓"
+                    } else {
+                        "Logged: $title"
+                    }
+                    Toast.makeText(context, toastMsg, Toast.LENGTH_SHORT).show()
                 }
             )
         }
@@ -435,7 +447,7 @@ fun DashboardScreen(
             // Today Summary Bar
             item {
                 Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-                    TodaySummaryBar(summary = todaySummary)
+                    TodaySummaryBar(allLogs = allLogs, summary = todaySummary)
                 }
             }
 

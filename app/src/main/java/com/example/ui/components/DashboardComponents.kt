@@ -14,6 +14,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -52,6 +54,14 @@ import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Thermostat
 import androidx.compose.material.icons.filled.WaterDrop
+import androidx.compose.material.icons.filled.CalendarToday
+import androidx.compose.material.icons.filled.ChevronLeft
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.material3.IconButton
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -962,52 +972,179 @@ fun QuickActionButton(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun TodaySummaryBar(summary: TodaySummary) {
+fun TodaySummaryBar(
+    allLogs: List<ActivityLog> = emptyList(),
+    summary: TodaySummary = TodaySummary()
+) {
+    val totalPages = 3650
+    val todayPageIndex = totalPages - 1
+    val pagerState = rememberPagerState(
+        initialPage = todayPageIndex,
+        pageCount = { totalPages }
+    )
+    val scope = rememberCoroutineScope()
+
+    val currentDayOffset = pagerState.currentPage - todayPageIndex
+
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f)
+        ),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
     ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-            Text(
-                text = "TODAY'S ROUTINE SUMMARY",
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                letterSpacing = 0.6.sp
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
+        Column(modifier = Modifier.padding(vertical = 12.dp, horizontal = 12.dp)) {
+            // Header Row with Date, Navigation controls, and Quick Jump button
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                SummaryPill(
-                    title = "Feedings",
-                    value = "${summary.feedCount} times",
-                    subtext = "${summary.totalFeedVolumeMl} ml",
-                    color = FeedingColor
-                )
-                SummaryPill(
-                    title = "Sleep",
-                    value = IntelligentNeedEngine.formatMinutes(summary.totalSleepMinutes),
-                    subtext = "${summary.napCount} naps",
-                    color = SleepColor
-                )
-                SummaryPill(
-                    title = "Diapers",
-                    value = "${summary.wetDiaperCount + summary.dirtyDiaperCount} total",
-                    subtext = "${summary.wetDiaperCount}W / ${summary.dirtyDiaperCount}D",
-                    color = DiaperColor
-                )
-                SummaryPill(
-                    title = "Milk Pumped",
-                    value = "${summary.totalPumpedVolumeMl} ml",
-                    subtext = "In Stash",
-                    color = PumpingColor
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CalendarToday,
+                        contentDescription = null,
+                        modifier = Modifier.size(13.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+
+                    val headerText = remember(allLogs, currentDayOffset, summary) {
+                        if (currentDayOffset == 0 && summary.dateLabel.isNotEmpty()) {
+                            summary.dateLabel
+                        } else {
+                            IntelligentNeedEngine.computeDaySummary(allLogs, currentDayOffset).dateLabel
+                        }
+                    }
+
+                    Text(
+                        text = headerText,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        letterSpacing = 0.5.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (currentDayOffset < 0) {
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            modifier = Modifier
+                                .clickable {
+                                    scope.launch {
+                                        pagerState.animateScrollToPage(todayPageIndex)
+                                    }
+                                }
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                            ) {
+                                Text(
+                                    text = "Today ↩",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.width(4.dp))
+                    }
+
+                    IconButton(
+                        onClick = {
+                            if (pagerState.currentPage > 0) {
+                                scope.launch {
+                                    pagerState.animateScrollToPage(pagerState.currentPage - 1)
+                                }
+                            }
+                        },
+                        enabled = pagerState.currentPage > 0,
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ChevronLeft,
+                            contentDescription = "Previous Day",
+                            tint = if (pagerState.currentPage > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+
+                    IconButton(
+                        onClick = {
+                            if (pagerState.currentPage < todayPageIndex) {
+                                scope.launch {
+                                    pagerState.animateScrollToPage(pagerState.currentPage + 1)
+                                }
+                            }
+                        },
+                        enabled = pagerState.currentPage < todayPageIndex,
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ChevronRight,
+                            contentDescription = "Next Day",
+                            tint = if (pagerState.currentPage < todayPageIndex) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxWidth()
+            ) { page ->
+                val dayOffset = page - todayPageIndex
+                val daySummary = remember(allLogs, dayOffset, summary) {
+                    if (dayOffset == 0) {
+                        if (allLogs.isNotEmpty()) IntelligentNeedEngine.computeDaySummary(allLogs, 0) else summary
+                    } else {
+                        IntelligentNeedEngine.computeDaySummary(allLogs, dayOffset)
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    SummaryPill(
+                        title = "Feedings",
+                        value = "${daySummary.feedCount} times",
+                        subtext = "${daySummary.totalFeedVolumeMl} ml",
+                        color = FeedingColor
+                    )
+                    SummaryPill(
+                        title = "Sleep",
+                        value = IntelligentNeedEngine.formatMinutes(daySummary.totalSleepMinutes),
+                        subtext = "${daySummary.napCount} naps",
+                        color = SleepColor
+                    )
+                    SummaryPill(
+                        title = "Diapers",
+                        value = "${daySummary.wetDiaperCount + daySummary.dirtyDiaperCount} total",
+                        subtext = "${daySummary.wetDiaperCount}W / ${daySummary.dirtyDiaperCount}D",
+                        color = DiaperColor
+                    )
+                    SummaryPill(
+                        title = "Milk Pumped",
+                        value = "${daySummary.totalPumpedVolumeMl} ml",
+                        subtext = "In Stash",
+                        color = PumpingColor
+                    )
+                }
             }
         }
     }
@@ -1020,26 +1157,36 @@ fun SummaryPill(
     subtext: String,
     color: Color
 ) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.padding(horizontal = 4.dp)
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = color.copy(alpha = 0.08f),
+        border = BorderStroke(0.5.dp, color.copy(alpha = 0.25f)),
+        modifier = Modifier.padding(horizontal = 2.dp)
     ) {
-        Text(
-            text = title,
-            fontSize = 11.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Text(
-            text = value,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Bold,
-            color = color
-        )
-        Text(
-            text = subtext,
-            fontSize = 10.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
+        ) {
+            Text(
+                text = title,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = value,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                color = color
+            )
+            Spacer(modifier = Modifier.height(1.dp))
+            Text(
+                text = subtext,
+                fontSize = 10.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+            )
+        }
     }
 }
 
@@ -1058,7 +1205,6 @@ fun BabyStatusBoard(
         it.activityType == ActivityTypes.SLEEP && it.endTimeMillis != null
     }
 
-    // Feed formatting
     val feedTimeText = lastFeed?.let { formatAgo(currentTimeMillis - it.startTimeMillis) } ?: "No feeds"
     val feedSubtext = when {
         lastFeed == null -> "Not logged yet"
@@ -1074,21 +1220,21 @@ fun BabyStatusBoard(
         else -> "Logged"
     }
 
-    // Diaper formatting
     val diaperTimeText = lastDiaper?.let { formatAgo(currentTimeMillis - it.startTimeMillis) } ?: "No diapers"
     val diaperSubtext = lastDiaper?.diaperStatus?.ifBlank { null } ?: if (lastDiaper != null) "Logged" else "Not logged yet"
 
-    // Sleep formatting
     val (sleepValue, sleepSubtext) = when {
         ongoing?.activityType == ActivityTypes.SLEEP -> {
             val mins = (currentTimeMillis - ongoing.startTimeMillis) / 60_000L
-            "Sleeping" to "For ${IntelligentNeedEngine.formatMinutes(mins)}"
+            "Sleeping" to "In progress · ${IntelligentNeedEngine.formatMinutes(mins)}"
         }
         lastSleepEnded?.endTimeMillis != null -> {
-            val awakeMins = (currentTimeMillis - lastSleepEnded.endTimeMillis!!) / 60_000L
-            "Awake" to "For ${IntelligentNeedEngine.formatMinutes(awakeMins)}"
+            val endMillis = lastSleepEnded.endTimeMillis!!
+            val agoText = formatAgo(currentTimeMillis - endMillis)
+            val awakeMins = (currentTimeMillis - endMillis) / 60_000L
+            agoText to "Awake · ${IntelligentNeedEngine.formatMinutes(awakeMins)}"
         }
-        else -> "Awake" to "Ready for routine"
+        else -> "No sleep" to "Not logged yet"
     }
 
     Column(
@@ -1098,128 +1244,87 @@ fun BabyStatusBoard(
     ) {
         Text(
             text = "BABY STATUS BOARD",
-            fontSize = 12.sp,
+            fontSize = 11.sp,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            letterSpacing = 0.8.sp,
-            modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp)
+            letterSpacing = 0.6.sp,
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
         )
 
         Spacer(modifier = Modifier.height(4.dp))
 
-        // 3 Status Cards in one row
+        SegmentedStripStatusBoard(
+            feedValue = feedTimeText, feedSub = feedSubtext,
+            diaperValue = diaperTimeText, diaperSub = diaperSubtext,
+            sleepValue = sleepValue, sleepSub = sleepSubtext
+        )
+    }
+}
+
+@Composable
+private fun SegmentedStripStatusBoard(
+    feedValue: String, feedSub: String,
+    diaperValue: String, diaperSub: String,
+    sleepValue: String, sleepSub: String
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+    ) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 12.dp, horizontal = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            StatusSquareCard(
-                title = "Last Feed",
-                value = feedTimeText,
-                subtext = feedSubtext,
-                icon = Icons.Default.WaterDrop,
-                accentColor = FeedingColor,
-                modifier = Modifier.weight(1f),
-                testTag = "status_box_feed"
+            StatusSegment(
+                title = "LAST FEED", value = feedValue, subtext = feedSub,
+                icon = Icons.Default.WaterDrop, color = FeedingColor, modifier = Modifier.weight(1f)
             )
-            StatusSquareCard(
-                title = "Last Diaper",
-                value = diaperTimeText,
-                subtext = diaperSubtext,
-                icon = Icons.Default.CleaningServices,
-                accentColor = DiaperColor,
-                modifier = Modifier.weight(1f),
-                testTag = "status_box_diaper"
+            Box(
+                modifier = Modifier
+                    .width(1.dp)
+                    .height(48.dp)
+                    .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
             )
-            StatusSquareCard(
-                title = "Sleep Status",
-                value = sleepValue,
-                subtext = sleepSubtext,
-                icon = Icons.Default.NightlightRound,
-                accentColor = SleepColor,
-                modifier = Modifier.weight(1f),
-                testTag = "status_box_sleep"
+            StatusSegment(
+                title = "LAST DIAPER", value = diaperValue, subtext = diaperSub,
+                icon = Icons.Default.CleaningServices, color = DiaperColor, modifier = Modifier.weight(1f)
+            )
+            Box(
+                modifier = Modifier
+                    .width(1.dp)
+                    .height(48.dp)
+                    .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+            )
+            StatusSegment(
+                title = "LAST SLEEP", value = sleepValue, subtext = sleepSub,
+                icon = Icons.Default.NightlightRound, color = SleepColor, modifier = Modifier.weight(1f)
             )
         }
     }
 }
 
 @Composable
-private fun StatusSquareCard(
-    title: String,
-    value: String,
-    subtext: String,
-    icon: ImageVector,
-    accentColor: Color,
-    modifier: Modifier = Modifier,
-    testTag: String? = null
+private fun StatusSegment(
+    title: String, value: String, subtext: String,
+    icon: ImageVector, color: Color, modifier: Modifier = Modifier
 ) {
-    Card(
-        modifier = modifier
-            .fillMaxWidth()
-            .then(if (testTag != null) Modifier.testTag(testTag) else Modifier),
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = accentColor.copy(alpha = 0.10f)),
-        border = BorderStroke(1.5.dp, accentColor.copy(alpha = 0.25f))
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = modifier.padding(horizontal = 4.dp)
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(10.dp),
-            verticalArrangement = Arrangement.SpaceBetween
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(28.dp)
-                        .clip(CircleShape)
-                        .background(accentColor),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = title,
-                        tint = Color.White,
-                        modifier = Modifier.size(15.dp)
-                    )
-                }
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = title.uppercase(),
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = accentColor,
-                    letterSpacing = 0.4.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Text(
-                text = value,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-
-            Spacer(modifier = Modifier.height(2.dp))
-
-            Text(
-                text = subtext,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(imageVector = icon, contentDescription = null, tint = color, modifier = Modifier.size(12.dp))
+            Spacer(modifier = Modifier.width(3.dp))
+            Text(text = title, fontSize = 9.sp, fontWeight = FontWeight.Bold, color = color, letterSpacing = 0.4.sp)
         }
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(text = value, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Spacer(modifier = Modifier.height(1.dp))
+        Text(text = subtext, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 

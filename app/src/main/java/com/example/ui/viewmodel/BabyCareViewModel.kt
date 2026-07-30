@@ -958,13 +958,22 @@ class BabyCareViewModel @JvmOverloads constructor(
             val sleepSummary = "Slept ${summary.totalSleepMinutes} minutes across ${summary.napCount} naps"
             val patternSummary = patterns.toAiContextSummary()
 
+            val now = System.currentTimeMillis()
+            val recentCustomLogs = recentLogs.value
+                .filter { it.activityType == ActivityTypes.CUSTOM && (now - it.startTimeMillis) <= 86_400_000L }
+                .take(5)
+            val customSummary = if (recentCustomLogs.isNotEmpty()) {
+                "Recent custom events: " + recentCustomLogs.joinToString("; ") { it.notes.ifBlank { "Custom Action" } }
+            } else ""
+
             val response = geminiService.askGeminiCaregiver(
                 userQuestion = questionText,
                 babyName = babyName,
                 babyAgeMonths = ageMonths,
                 lastFeedingSummary = feedSummary,
                 lastSleepSummary = sleepSummary,
-                patternSummary = patternSummary
+                patternSummary = patternSummary,
+                customActivitySummary = customSummary
             )
 
             _isAiThinking.value = false

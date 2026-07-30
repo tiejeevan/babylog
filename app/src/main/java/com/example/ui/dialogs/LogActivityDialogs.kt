@@ -6,6 +6,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -25,6 +26,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.NightlightRound
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.AlertDialog
@@ -35,7 +37,9 @@ import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -44,6 +48,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TimePicker
 import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -61,6 +66,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.ActivityLog
@@ -82,7 +89,7 @@ import java.util.Date
 import java.util.Locale
 import kotlin.math.roundToInt
 
-// Modern Square UI Button / Chip Component
+// Modern Touch-Friendly Square UI Button / Chip Component
 @Composable
 fun SquareChoiceChip(
     selected: Boolean,
@@ -99,12 +106,12 @@ fun SquareChoiceChip(
         color = if (selected) accentColor else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
         contentColor = if (selected) Color.White else MaterialTheme.colorScheme.onSurface,
         border = BorderStroke(
-            width = if (selected) 2.dp else 1.dp,
+            width = if (selected) 1.5.dp else 1.dp,
             color = if (selected) accentColor else MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)
         )
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center
         ) {
@@ -112,7 +119,7 @@ fun SquareChoiceChip(
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
-                    modifier = Modifier.size(16.dp),
+                    modifier = Modifier.size(15.dp),
                     tint = if (selected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(modifier = Modifier.width(4.dp))
@@ -120,13 +127,16 @@ fun SquareChoiceChip(
             Text(
                 text = label,
                 fontSize = 12.sp,
-                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                textAlign = TextAlign.Center
             )
         }
     }
 }
 
-// Modern Square UI Action Button
+// Modern Square UI Primary Action Button
 @Composable
 fun SquareActionButton(
     onClick: () -> Unit,
@@ -139,14 +149,186 @@ fun SquareActionButton(
     Button(
         onClick = onClick,
         enabled = enabled,
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(14.dp),
         colors = ButtonDefaults.buttonColors(
             containerColor = containerColor,
             contentColor = contentColor
         ),
-        modifier = modifier
+        modifier = modifier.fillMaxWidth().heightIn(min = 52.dp)
     ) {
-        Text(text = text, fontWeight = FontWeight.Bold)
+        Text(text = text, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+    }
+}
+
+val LocalUseBottomSheet = androidx.compose.runtime.compositionLocalOf { true }
+
+// Reusable ModalBottomSheet Container with Top-Right Dismiss Button and Half-Minimized State
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ActionModalBottomSheet(
+    onDismissRequest: () -> Unit,
+    title: String,
+    accentColor: Color = MaterialTheme.colorScheme.primary,
+    icon: ImageVector? = null,
+    useBottomSheet: Boolean = LocalUseBottomSheet.current,
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    if (!useBottomSheet) {
+        Surface(
+            modifier = modifier.fillMaxWidth(),
+            color = MaterialTheme.colorScheme.surface,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+            shape = RoundedCornerShape(20.dp),
+            tonalElevation = 6.dp
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 20.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        if (icon != null) {
+                            Icon(
+                                imageVector = icon,
+                                contentDescription = null,
+                                tint = accentColor,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                        }
+                        Text(
+                            text = title,
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = accentColor
+                        )
+                    }
+                    IconButton(
+                        onClick = onDismissRequest,
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Close"
+                        )
+                    }
+                }
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    content()
+                }
+            }
+        }
+    } else {
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+        ModalBottomSheet(
+            onDismissRequest = onDismissRequest,
+            sheetState = sheetState,
+            dragHandle = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 10.dp, bottom = 6.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Surface(
+                        modifier = Modifier
+                            .width(42.dp)
+                            .height(5.dp),
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
+                    ) {}
+                }
+            },
+            containerColor = MaterialTheme.colorScheme.surface,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+            modifier = modifier
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+                    .padding(bottom = 28.dp)
+            ) {
+                // Header Row with Title, Icon, and Top-Right Close Button
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        if (icon != null) {
+                            Surface(
+                                shape = CircleShape,
+                                color = accentColor.copy(alpha = 0.15f),
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = icon,
+                                        contentDescription = null,
+                                        tint = accentColor,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                        }
+                        Text(
+                            text = title,
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = accentColor
+                        )
+                    }
+
+                    IconButton(
+                        onClick = onDismissRequest,
+                        modifier = Modifier
+                            .size(36.dp)
+                            .background(
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                                shape = CircleShape
+                            )
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Close",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    content()
+                }
+            }
+        }
     }
 }
 
@@ -209,8 +391,9 @@ fun EventTimeSelector(
             }
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
+        // 4 Equal Quick Preset Chips
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -243,14 +426,40 @@ fun EventTimeSelector(
                 accentColor = accentColor,
                 modifier = Modifier.weight(1f)
             )
-            SquareChoiceChip(
-                selected = isCustom,
-                onClick = { showTimePicker = true },
-                label = "Set Time",
-                icon = Icons.Default.AccessTime,
-                accentColor = accentColor,
-                modifier = Modifier.weight(1.2f)
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Prominent Full-Width Custom Time Picker Button
+        Surface(
+            onClick = { showTimePicker = true },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            color = if (isCustom) accentColor.copy(alpha = 0.14f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+            border = BorderStroke(
+                width = if (isCustom) 1.5.dp else 1.dp,
+                color = if (isCustom) accentColor else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
             )
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.AccessTime,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = if (isCustom) accentColor else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = if (isCustom) "Custom Time: ${dateTimeFormat.format(Date(selectedTimeMillis))}" else "Set Custom Date & Time...",
+                    fontSize = 12.sp,
+                    fontWeight = if (isCustom) FontWeight.Bold else FontWeight.Medium,
+                    color = if (isCustom) accentColor else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
 
         if (showDatePicker) {
@@ -350,16 +559,17 @@ fun PoopColorSlider(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "Stool Color & Pediatric Guide:",
+                    text = "Stool Color Palette:",
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Bold
                 )
             }
+
             Text(
                 text = currentColor.name,
                 style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.Bold,
-                color = currentColor.hexColor
+                color = currentColor.hexColor,
+                fontWeight = FontWeight.Bold
             )
         }
 
@@ -373,73 +583,55 @@ fun PoopColorSlider(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Square Color Cards
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            stoolColorPalette.forEachIndexed { index, colorInfo ->
-                val isSelected = (index == selectedIndex)
-                Surface(
-                    onClick = {
-                        selectedIndex = index
-                        onColorSelected(colorInfo)
-                    },
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(44.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    color = colorInfo.hexColor.copy(alpha = if (isSelected) 1.0f else 0.35f),
-                    border = BorderStroke(
-                        width = if (isSelected) 3.dp else 1.dp,
-                        color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent
+        // Visual Palette Bar with Slider
+        Box(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(14.dp)
+                    .padding(horizontal = 6.dp)
+                    .clip(RoundedCornerShape(7.dp)),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                stoolColorPalette.forEach { colorInfo ->
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(14.dp)
+                            .background(colorInfo.hexColor)
                     )
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        if (isSelected) {
-                            Icon(
-                                imageVector = Icons.Default.Check,
-                                contentDescription = null,
-                                tint = Color.White,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                    }
                 }
             }
+
+            Slider(
+                value = selectedIndex.toFloat(),
+                onValueChange = {
+                    val newIdx = it.roundToInt().coerceIn(0, stoolColorPalette.size - 1)
+                    if (newIdx != selectedIndex) {
+                        selectedIndex = newIdx
+                        onColorSelected(stoolColorPalette[newIdx])
+                    }
+                },
+                valueRange = 0f..(stoolColorPalette.size - 1).toFloat(),
+                steps = stoolColorPalette.size - 2,
+                colors = SliderDefaults.colors(
+                    thumbColor = currentColor.hexColor,
+                    activeTrackColor = Color.Transparent,
+                    inactiveTrackColor = Color.Transparent
+                )
+            )
         }
-
-        Spacer(modifier = Modifier.height(4.dp))
-
-        // Smooth Color Slider
-        Slider(
-            value = selectedIndex.toFloat(),
-            onValueChange = {
-                val idx = it.roundToInt().coerceIn(0, stoolColorPalette.size - 1)
-                if (idx != selectedIndex) {
-                    selectedIndex = idx
-                    onColorSelected(stoolColorPalette[idx])
-                }
-            },
-            valueRange = 0f..(stoolColorPalette.size - 1).toFloat(),
-            steps = stoolColorPalette.size - 2,
-            colors = SliderDefaults.colors(
-                thumbColor = currentColor.hexColor,
-                activeTrackColor = currentColor.hexColor.copy(alpha = 0.7f)
-            ),
-            modifier = Modifier.fillMaxWidth()
-        )
     }
 }
 
-// Interactive Volume Slider with Presets
+// Volume Slider with Quick Presets
 @Composable
 fun VolumeSliderWithPresets(
     volumeMl: Int,
     onVolumeChanged: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val presets = listOf(60, 90, 120, 150, 180, 240)
+    val presets = listOf(60 to "2 oz (60ml)", 120 to "4 oz (120ml)", 180 to "6 oz (180ml)", 240 to "8 oz (240ml)")
 
     Column(modifier = modifier.fillMaxWidth()) {
         Row(
@@ -447,20 +639,17 @@ fun VolumeSliderWithPresets(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = "Volume (ml):",
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Bold
-            )
+            Text(text = "Amount / Volume:", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
             Surface(
                 color = FeedingColor.copy(alpha = 0.15f),
                 shape = RoundedCornerShape(8.dp)
             ) {
+                val oz = (volumeMl / 29.5735).roundToInt()
                 Text(
-                    text = "$volumeMl ml (${(volumeMl / 29.5735).roundToInt()} oz)",
+                    text = "$volumeMl ml ($oz oz)",
                     style = MaterialTheme.typography.titleMedium,
-                    color = FeedingColor,
                     fontWeight = FontWeight.Bold,
+                    color = FeedingColor,
                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                 )
             }
@@ -468,56 +657,51 @@ fun VolumeSliderWithPresets(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Preset Square Choice Chips
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            presets.forEach { preset ->
-                val isSelected = (volumeMl == preset)
+            presets.forEach { (presetMl, label) ->
                 SquareChoiceChip(
-                    selected = isSelected,
-                    onClick = { onVolumeChanged(preset) },
-                    label = "${preset}ml",
+                    selected = (volumeMl == presetMl),
+                    onClick = { onVolumeChanged(presetMl) },
+                    label = label,
                     accentColor = FeedingColor,
                     modifier = Modifier
                         .weight(1f)
-                        .testTag("chip_volume_$preset")
+                        .testTag("chip_volume_$presetMl")
                 )
             }
         }
 
-        Spacer(modifier = Modifier.height(4.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
         Slider(
             value = volumeMl.toFloat(),
-            onValueChange = { onVolumeChanged(it.roundToInt()) },
-            valueRange = 0f..360f,
-            steps = 71,
+            onValueChange = { onVolumeChanged((it / 10).roundToInt() * 10) },
+            valueRange = 10f..350f,
             colors = SliderDefaults.colors(
                 thumbColor = FeedingColor,
-                activeTrackColor = FeedingColor
-            ),
-            modifier = Modifier.fillMaxWidth()
+                activeTrackColor = FeedingColor,
+                inactiveTrackColor = FeedingColor.copy(alpha = 0.2f)
+            )
         )
     }
 }
 
-// Interactive Temperature Slider with Gauge Status
+// Temperature Slider with Pediatric Gauge
 @Composable
 fun TemperatureSliderWithGauge(
     tempCelsius: Double,
     onTempChanged: (Double) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val presets = listOf(36.5, 36.8, 37.2, 37.5, 38.0, 38.5)
+    val tempFahrenheit = (tempCelsius * 9 / 5) + 32
+    val isFever = tempCelsius >= 38.0
+    val isLow = tempCelsius < 36.1
+    val statusColor = if (isFever) Color(0xFFE53935) else if (isLow) Color(0xFF1E88E5) else HealthColor
 
-    val (statusLabel, statusColor) = when {
-        tempCelsius < 36.0 -> "Low" to Color(0xFF00838F)
-        tempCelsius <= 37.5 -> "Normal" to Color(0xFF2E7D32)
-        tempCelsius <= 38.0 -> "Elevated" to Color(0xFFEF6C00)
-        else -> "Fever" to Color(0xFFC62828)
-    }
+    val statusText = if (isFever) "Fever Alert (≥ 100.4°F)" else if (isLow) "Low Temp (< 97.0°F)" else "Normal Temperature"
 
     Column(modifier = modifier.fillMaxWidth()) {
         Row(
@@ -525,71 +709,58 @@ fun TemperatureSliderWithGauge(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = "Temperature:",
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Bold
-            )
+            Column {
+                Text(text = "Temperature Reading:", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                Text(text = statusText, style = MaterialTheme.typography.bodySmall, color = statusColor, fontWeight = FontWeight.Bold)
+            }
+
             Surface(
                 color = statusColor.copy(alpha = 0.15f),
                 shape = RoundedCornerShape(8.dp)
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
+                Text(
+                    text = String.format(Locale.US, "%.1f°C / %.1f°F", tempCelsius, tempFahrenheit),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = statusColor,
                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                ) {
-                    Text(
-                        text = String.format(Locale.US, "%.1f°C / %.1f°F", tempCelsius, (tempCelsius * 9 / 5) + 32),
-                        style = MaterialTheme.typography.titleMedium,
-                        color = statusColor,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "($statusLabel)",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = statusColor,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
+                )
             }
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
-        // Square Preset Chips
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            presets.forEach { preset ->
-                val isSelected = (Math.abs(tempCelsius - preset) < 0.05)
+            listOf(36.8 to "98.2°F", 37.0 to "98.6°F", 37.5 to "99.5°F", 38.2 to "100.8°F (Fever)").forEach { (tCel, label) ->
                 SquareChoiceChip(
-                    selected = isSelected,
-                    onClick = { onTempChanged(preset) },
-                    label = String.format(Locale.US, "%.1f°", preset),
-                    accentColor = HealthColor,
+                    selected = (Math.abs(tempCelsius - tCel) < 0.15),
+                    onClick = { onTempChanged(tCel) },
+                    label = label,
+                    accentColor = statusColor,
                     modifier = Modifier.weight(1f)
                 )
             }
         }
 
-        Spacer(modifier = Modifier.height(4.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
         Slider(
             value = tempCelsius.toFloat(),
-            onValueChange = { onTempChanged((Math.round(it * 10.0) / 10.0)) },
+            onValueChange = { onTempChanged((it * 10).roundToInt() / 10.0) },
             valueRange = 35.0f..41.0f,
-            steps = 59,
             colors = SliderDefaults.colors(
-                thumbColor = HealthColor,
-                activeTrackColor = HealthColor
-            ),
-            modifier = Modifier.fillMaxWidth()
+                thumbColor = statusColor,
+                activeTrackColor = statusColor,
+                inactiveTrackColor = statusColor.copy(alpha = 0.2f)
+            )
         )
     }
 }
 
+// Dialog Composables Refactored into Touch-Friendly ModalBottomSheets
 @Composable
 fun LogSleepDialog(
     onDismiss: () -> Unit,
@@ -601,141 +772,126 @@ fun LogSleepDialog(
     var notesText by remember { mutableStateOf("") }
     var eventTimestampMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
-    AlertDialog(
+    ActionModalBottomSheet(
         onDismissRequest = onDismiss,
-        title = {
-            Text(
-                text = "Log Sleep & Naps 💤",
-                fontWeight = FontWeight.Bold,
-                color = SleepColor
-            )
-        },
-        text = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
+        title = "Log Sleep & Naps 💤",
+        accentColor = SleepColor,
+        icon = Icons.Default.NightlightRound
+    ) {
+        // Live Sleep Timer Button
+        Surface(
+            onClick = {
+                onStartLiveTimer()
+                onDismiss()
+            },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp),
+            color = SleepColor.copy(alpha = 0.15f),
+            border = BorderStroke(1.5.dp, SleepColor)
+        ) {
+            Row(
+                modifier = Modifier.padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                // Live Sleep Timer Button
-                Surface(
-                    onClick = {
-                        onStartLiveTimer()
-                        onDismiss()
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    color = SleepColor.copy(alpha = 0.15f),
-                    border = BorderStroke(1.5.dp, SleepColor)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(14.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.NightlightRound,
-                            contentDescription = null,
-                            tint = SleepColor,
-                            modifier = Modifier.size(24.dp)
-                        )
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Start Live Sleep Timer ⏱️", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
-                            Text("Track active sleep with live duration timer", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
+                Icon(
+                    imageVector = Icons.Default.NightlightRound,
+                    contentDescription = null,
+                    tint = SleepColor,
+                    modifier = Modifier.size(26.dp)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Start Live Sleep Timer ⏱️", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                    Text("Track active sleep with live duration timer", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // 1-Tap Quick Nap (Just Woke Up)
-                Text(
-                    text = "Just Woke Up? 1-Tap Quick Log:",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    listOf(30, 45, 60, 90, 120).forEach { dur ->
-                        val label = if (dur < 60) "${dur}m" else if (dur == 60) "1h" else "${dur / 60.0}h"
-                        SquareChoiceChip(
-                            selected = false,
-                            onClick = {
-                                onConfirmQuickNap(dur)
-                                onDismiss()
-                            },
-                            label = label,
-                            accentColor = SleepColor,
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Historical / Past Sleep Event
-                Text(
-                    text = "Or Log Past Sleep Session:",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-
-                EventTimeSelector(
-                    selectedTimeMillis = eventTimestampMillis,
-                    onTimeSelected = { eventTimestampMillis = it },
-                    accentColor = SleepColor
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Text(text = "Nap Duration:", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
-                Spacer(modifier = Modifier.height(6.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    listOf(30, 60, 90, 120, 180).forEach { dur ->
-                        val label = if (dur < 60) "${dur}m" else "${dur / 60}h"
-                        SquareChoiceChip(
-                            selected = (selectedDurationMinutes == dur),
-                            onClick = { selectedDurationMinutes = dur },
-                            label = label,
-                            accentColor = SleepColor,
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                OutlinedTextField(
-                    value = notesText,
-                    onValueChange = { notesText = it },
-                    label = { Text("Notes (e.g. crib, stroller, car)") },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
-                )
-            }
-        },
-        confirmButton = {
-            SquareActionButton(
-                onClick = {
-                    onConfirmPastSleep(selectedDurationMinutes, notesText, eventTimestampMillis)
-                    onDismiss()
-                },
-                containerColor = SleepColor,
-                text = "Save Past Sleep Log"
-            )
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
             }
         }
-    )
+
+        Spacer(modifier = Modifier.height(18.dp))
+
+        // 1-Tap Quick Nap (Just Woke Up)
+        Text(
+            text = "Just Woke Up? 1-Tap Quick Log:",
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            listOf(30, 45, 60, 90, 120).forEach { dur ->
+                val label = if (dur < 60) "${dur}m" else if (dur == 60) "1h" else "${dur / 60.0}h"
+                SquareChoiceChip(
+                    selected = false,
+                    onClick = {
+                        onConfirmQuickNap(dur)
+                        onDismiss()
+                    },
+                    label = label,
+                    accentColor = SleepColor,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(18.dp))
+
+        // Historical / Past Sleep Event
+        Text(
+            text = "Or Log Past Sleep Session:",
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+
+        EventTimeSelector(
+            selectedTimeMillis = eventTimestampMillis,
+            onTimeSelected = { eventTimestampMillis = it },
+            accentColor = SleepColor
+        )
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        Text(text = "Nap Duration:", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            listOf(30, 60, 90, 120, 180).forEach { dur ->
+                val label = if (dur < 60) "${dur}m" else "${dur / 60}h"
+                SquareChoiceChip(
+                    selected = (selectedDurationMinutes == dur),
+                    onClick = { selectedDurationMinutes = dur },
+                    label = label,
+                    accentColor = SleepColor,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        OutlinedTextField(
+            value = notesText,
+            onValueChange = { notesText = it },
+            label = { Text("Notes (e.g. crib, stroller, car)") },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp)
+        )
+
+        Spacer(modifier = Modifier.height(18.dp))
+
+        SquareActionButton(
+            onClick = {
+                onConfirmPastSleep(selectedDurationMinutes, notesText, eventTimestampMillis)
+                onDismiss()
+            },
+            containerColor = SleepColor,
+            text = "Save Past Sleep Log"
+        )
+    }
 }
 
 @Composable
@@ -751,152 +907,133 @@ fun LogNurseDialog(
     var notesText by remember { mutableStateOf("") }
     var eventTimestampMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
-    AlertDialog(
+    ActionModalBottomSheet(
         onDismissRequest = onDismiss,
-        title = {
-            Text(
-                text = "Log Nursing & Breastfeeding 🍼",
-                fontWeight = FontWeight.Bold,
-                color = FeedingColor
+        title = "Log Nursing & Breastfeeding 🍼",
+        accentColor = FeedingColor
+    ) {
+        Text("Start Live Timer:", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            SquareChoiceChip(
+                selected = (initialLiveSide == NursingSide.LEFT),
+                onClick = { initialLiveSide = NursingSide.LEFT },
+                label = "Left First ⬅️",
+                accentColor = FeedingColor,
+                modifier = Modifier.weight(1f)
             )
-        },
-        text = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
-            ) {
-                // Option A: Start Live Breastfeeding Timer
-                Text("Start Live Timer:", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
-                Spacer(modifier = Modifier.height(6.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    SquareChoiceChip(
-                        selected = (initialLiveSide == NursingSide.LEFT),
-                        onClick = { initialLiveSide = NursingSide.LEFT },
-                        label = "Left First ⬅️",
-                        accentColor = FeedingColor,
-                        modifier = Modifier.weight(1f)
-                    )
-                    SquareChoiceChip(
-                        selected = (initialLiveSide == NursingSide.RIGHT),
-                        onClick = { initialLiveSide = NursingSide.RIGHT },
-                        label = "Right First ➡️",
-                        accentColor = FeedingColor,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
+            SquareChoiceChip(
+                selected = (initialLiveSide == NursingSide.RIGHT),
+                onClick = { initialLiveSide = NursingSide.RIGHT },
+                label = "Right First ➡️",
+                accentColor = FeedingColor,
+                modifier = Modifier.weight(1f)
+            )
+        }
 
-                Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
-                SquareActionButton(
+        SquareActionButton(
+            onClick = {
+                onStartLiveTimer(initialLiveSide)
+                onDismiss()
+            },
+            containerColor = FeedingColor,
+            text = "Start Live Nursing Timer ⏱️",
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        Spacer(modifier = Modifier.height(18.dp))
+
+        Text(
+            text = "Just Finished? 1-Tap Quick Log:",
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            listOf(10, 15, 20, 30, 45).forEach { dur ->
+                SquareChoiceChip(
+                    selected = false,
                     onClick = {
-                        onStartLiveTimer(initialLiveSide)
+                        onConfirmQuickNurse(dur)
                         onDismiss()
                     },
-                    containerColor = FeedingColor,
-                    text = "Start Live Nursing Timer ⏱️",
-                    modifier = Modifier.fillMaxWidth()
+                    label = "${dur}m",
+                    accentColor = FeedingColor,
+                    modifier = Modifier.weight(1f)
                 )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Option B: 1-Tap Quick Log (Just Finished)
-                Text(
-                    text = "Just Finished? 1-Tap Quick Log:",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    listOf(10, 15, 20, 30, 45).forEach { dur ->
-                        SquareChoiceChip(
-                            selected = false,
-                            onClick = {
-                                onConfirmQuickNurse(dur)
-                                onDismiss()
-                            },
-                            label = "${dur}m",
-                            accentColor = FeedingColor,
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Option C: Historical / Past Nursing Event
-                Text(
-                    text = "Or Log Past Nursing Session:",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-
-                EventTimeSelector(
-                    selectedTimeMillis = eventTimestampMillis,
-                    onTimeSelected = { eventTimestampMillis = it },
-                    accentColor = FeedingColor
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedTextField(
-                        value = leftMinText,
-                        onValueChange = { leftMinText = it },
-                        label = { Text("Left (min)") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(12.dp)
-                    )
-                    OutlinedTextField(
-                        value = rightMinText,
-                        onValueChange = { rightMinText = it },
-                        label = { Text("Right (min)") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(12.dp)
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                OutlinedTextField(
-                    value = notesText,
-                    onValueChange = { notesText = it },
-                    label = { Text("Notes (optional)") },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
-                )
-            }
-        },
-        confirmButton = {
-            SquareActionButton(
-                onClick = {
-                    val lMin = leftMinText.toIntOrNull() ?: 10
-                    val rMin = rightMinText.toIntOrNull() ?: 10
-                    onConfirmPastNurse(lMin, rMin, notesText, eventTimestampMillis)
-                    onDismiss()
-                },
-                containerColor = FeedingColor,
-                text = "Save Past Nursing Log"
-            )
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
             }
         }
-    )
+
+        Spacer(modifier = Modifier.height(18.dp))
+
+        Text(
+            text = "Or Log Past Nursing Session:",
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+
+        EventTimeSelector(
+            selectedTimeMillis = eventTimestampMillis,
+            onTimeSelected = { eventTimestampMillis = it },
+            accentColor = FeedingColor
+        )
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            OutlinedTextField(
+                value = leftMinText,
+                onValueChange = { leftMinText = it },
+                label = { Text("Left (min)") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(12.dp)
+            )
+            OutlinedTextField(
+                value = rightMinText,
+                onValueChange = { rightMinText = it },
+                label = { Text("Right (min)") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(12.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        OutlinedTextField(
+            value = notesText,
+            onValueChange = { notesText = it },
+            label = { Text("Notes (optional)") },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp)
+        )
+
+        Spacer(modifier = Modifier.height(18.dp))
+
+        SquareActionButton(
+            onClick = {
+                val lMin = leftMinText.toIntOrNull() ?: 0
+                val rMin = rightMinText.toIntOrNull() ?: 0
+                onConfirmPastNurse(lMin, rMin, notesText, eventTimestampMillis)
+                onDismiss()
+            },
+            containerColor = FeedingColor,
+            text = "Save Past Nursing Log"
+        )
+    }
 }
 
 @Composable
@@ -909,82 +1046,66 @@ fun LogBottleDialog(
     var notesText by remember { mutableStateOf("") }
     var eventTimestampMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
-    AlertDialog(
+    ActionModalBottomSheet(
         onDismissRequest = onDismiss,
-        title = {
-            Text(
-                text = "Log Bottle Feeding 🍼",
-                fontWeight = FontWeight.Bold,
-                color = FeedingColor
-            )
-        },
-        text = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
-            ) {
-                EventTimeSelector(
-                    selectedTimeMillis = eventTimestampMillis,
-                    onTimeSelected = { eventTimestampMillis = it },
-                    accentColor = FeedingColor
+        title = "Log Bottle Feeding 🍼",
+        accentColor = FeedingColor
+    ) {
+        EventTimeSelector(
+            selectedTimeMillis = eventTimestampMillis,
+            onTimeSelected = { eventTimestampMillis = it },
+            accentColor = FeedingColor
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Text(text = "Milk Type:", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            listOf("Breast Milk", "Formula", "Water").forEach { type ->
+                SquareChoiceChip(
+                    selected = (selectedMilkType == type),
+                    onClick = { selectedMilkType = type },
+                    label = type,
+                    accentColor = FeedingColor,
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("chip_milk_$type")
                 )
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                Text(text = "Milk Type:", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
-                Spacer(modifier = Modifier.height(6.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    listOf("Breast Milk", "Formula", "Water").forEach { type ->
-                        SquareChoiceChip(
-                            selected = (selectedMilkType == type),
-                            onClick = { selectedMilkType = type },
-                            label = type,
-                            accentColor = FeedingColor,
-                            modifier = Modifier
-                                .weight(1f)
-                                .testTag("chip_milk_$type")
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                VolumeSliderWithPresets(
-                    volumeMl = volumeMl,
-                    onVolumeChanged = { volumeMl = it }
-                )
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                OutlinedTextField(
-                    value = notesText,
-                    onValueChange = { notesText = it },
-                    label = { Text("Notes (optional)") },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
-                )
-            }
-        },
-        confirmButton = {
-            SquareActionButton(
-                onClick = {
-                    onConfirm(volumeMl, selectedMilkType, notesText, eventTimestampMillis)
-                },
-                containerColor = FeedingColor,
-                text = "Log Feeding",
-                modifier = Modifier.testTag("confirm_bottle_log")
-            )
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
             }
         }
-    )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        VolumeSliderWithPresets(
+            volumeMl = volumeMl,
+            onVolumeChanged = { volumeMl = it }
+        )
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        OutlinedTextField(
+            value = notesText,
+            onValueChange = { notesText = it },
+            label = { Text("Notes (optional)") },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp)
+        )
+
+        Spacer(modifier = Modifier.height(18.dp))
+
+        SquareActionButton(
+            onClick = {
+                onConfirm(volumeMl, selectedMilkType, notesText, eventTimestampMillis)
+            },
+            containerColor = FeedingColor,
+            text = "Log Feeding",
+            modifier = Modifier.testTag("confirm_bottle_log")
+        )
+    }
 }
 
 @Composable
@@ -997,90 +1118,74 @@ fun LogDiaperDialog(
     var notesText by remember { mutableStateOf("") }
     var eventTimestampMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
-    AlertDialog(
+    ActionModalBottomSheet(
         onDismissRequest = onDismiss,
-        title = {
-            Text(
-                text = "Log Diaper Change 👶",
-                fontWeight = FontWeight.Bold,
-                color = DiaperColor
-            )
-        },
-        text = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
-            ) {
-                EventTimeSelector(
-                    selectedTimeMillis = eventTimestampMillis,
-                    onTimeSelected = { eventTimestampMillis = it },
-                    accentColor = DiaperColor
+        title = "Log Diaper Change 👶",
+        accentColor = DiaperColor
+    ) {
+        EventTimeSelector(
+            selectedTimeMillis = eventTimestampMillis,
+            onTimeSelected = { eventTimestampMillis = it },
+            accentColor = DiaperColor
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Text(text = "Diaper Status:", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            listOf("Wet", "Dirty", "Both", "Dry").forEach { status ->
+                SquareChoiceChip(
+                    selected = (selectedStatus == status),
+                    onClick = { selectedStatus = status },
+                    label = status,
+                    accentColor = DiaperColor,
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("chip_diaper_$status")
                 )
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                Text(text = "Diaper Status:", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
-                Spacer(modifier = Modifier.height(6.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    listOf("Wet", "Dirty", "Both", "Dry").forEach { status ->
-                        SquareChoiceChip(
-                            selected = (selectedStatus == status),
-                            onClick = { selectedStatus = status },
-                            label = status,
-                            accentColor = DiaperColor,
-                            modifier = Modifier
-                                .weight(1f)
-                                .testTag("chip_diaper_$status")
-                        )
-                    }
-                }
-
-                if (selectedStatus == "Dirty" || selectedStatus == "Both") {
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    PoopColorSlider(
-                        selectedColorId = selectedStoolColor.id,
-                        onColorSelected = { selectedStoolColor = it }
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                OutlinedTextField(
-                    value = notesText,
-                    onValueChange = { notesText = it },
-                    label = { Text("Notes (e.g. rash cream applied)") },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
-                )
-            }
-        },
-        confirmButton = {
-            SquareActionButton(
-                onClick = {
-                    val fullNotes = if (selectedStatus == "Dirty" || selectedStatus == "Both") {
-                        val stoolInfo = "Stool Color: ${selectedStoolColor.name}"
-                        if (notesText.isBlank()) stoolInfo else "$stoolInfo | $notesText"
-                    } else {
-                        notesText
-                    }
-                    onConfirm(selectedStatus, fullNotes, eventTimestampMillis)
-                },
-                containerColor = DiaperColor,
-                text = "Log Diaper",
-                modifier = Modifier.testTag("confirm_diaper_log")
-            )
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
             }
         }
-    )
+
+        if (selectedStatus == "Dirty" || selectedStatus == "Both") {
+            Spacer(modifier = Modifier.height(16.dp))
+
+            PoopColorSlider(
+                selectedColorId = selectedStoolColor.id,
+                onColorSelected = { selectedStoolColor = it }
+            )
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        OutlinedTextField(
+            value = notesText,
+            onValueChange = { notesText = it },
+            label = { Text("Notes (e.g. rash cream applied)") },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp)
+        )
+
+        Spacer(modifier = Modifier.height(18.dp))
+
+        SquareActionButton(
+            onClick = {
+                val fullNotes = if (selectedStatus == "Dirty" || selectedStatus == "Both") {
+                    val stoolInfo = "Stool Color: ${selectedStoolColor.name}"
+                    if (notesText.isBlank()) stoolInfo else "$stoolInfo | $notesText"
+                } else {
+                    notesText
+                }
+                onConfirm(selectedStatus, fullNotes, eventTimestampMillis)
+            },
+            containerColor = DiaperColor,
+            text = "Log Diaper",
+            modifier = Modifier.testTag("confirm_diaper_log")
+        )
+    }
 }
 
 @Composable
@@ -1093,77 +1198,61 @@ fun LogMedicineDialog(
     var notesText by remember { mutableStateOf("") }
     var eventTimestampMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
-    AlertDialog(
+    ActionModalBottomSheet(
         onDismissRequest = onDismiss,
-        title = {
-            Text(
-                text = "Log Medicine 💊",
-                fontWeight = FontWeight.Bold,
-                color = MedicineColor
-            )
-        },
-        text = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
-            ) {
-                EventTimeSelector(
-                    selectedTimeMillis = eventTimestampMillis,
-                    onTimeSelected = { eventTimestampMillis = it },
-                    accentColor = MedicineColor
-                )
+        title = "Log Medicine 💊",
+        accentColor = MedicineColor
+    ) {
+        EventTimeSelector(
+            selectedTimeMillis = eventTimestampMillis,
+            onTimeSelected = { eventTimestampMillis = it },
+            accentColor = MedicineColor
+        )
 
-                Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(14.dp))
 
-                Text(
-                    text = "Saves a dose to the timeline. For repeating reminders, use More → Reminders & Alarms.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = nameText,
-                    onValueChange = { nameText = it },
-                    label = { Text("Medicine Name") },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
-                )
+        Text(
+            text = "Saves a dose to the timeline. For repeating reminders, use More → Reminders & Alarms.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(10.dp))
+        OutlinedTextField(
+            value = nameText,
+            onValueChange = { nameText = it },
+            label = { Text("Medicine Name") },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp)
+        )
 
-                Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
-                OutlinedTextField(
-                    value = dosageText,
-                    onValueChange = { dosageText = it },
-                    label = { Text("Dosage") },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
-                )
+        OutlinedTextField(
+            value = dosageText,
+            onValueChange = { dosageText = it },
+            label = { Text("Dosage") },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp)
+        )
 
-                Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
-                OutlinedTextField(
-                    value = notesText,
-                    onValueChange = { notesText = it },
-                    label = { Text("Notes") },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
-                )
-            }
-        },
-        confirmButton = {
-            SquareActionButton(
-                onClick = { onConfirm(nameText, dosageText, notesText, eventTimestampMillis) },
-                containerColor = MedicineColor,
-                text = "Save Medicine Log"
-            )
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
-            }
-        }
-    )
+        OutlinedTextField(
+            value = notesText,
+            onValueChange = { notesText = it },
+            label = { Text("Notes") },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp)
+        )
+
+        Spacer(modifier = Modifier.height(18.dp))
+
+        SquareActionButton(
+            onClick = { onConfirm(nameText, dosageText, notesText, eventTimestampMillis) },
+            containerColor = MedicineColor,
+            text = "Save Medicine Log"
+        )
+    }
 }
 
 private val customActionSuggestions = listOf(
@@ -1185,89 +1274,73 @@ fun LogCustomActionDialog(
     var notesText by remember { mutableStateOf("") }
     var eventTimestampMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
-    AlertDialog(
+    ActionModalBottomSheet(
         onDismissRequest = onDismiss,
-        title = {
-            Text(
-                text = "Log custom action ✨",
-                fontWeight = FontWeight.Bold,
-                color = CustomActionColor
-            )
-        },
-        text = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
-            ) {
-                EventTimeSelector(
-                    selectedTimeMillis = eventTimestampMillis,
-                    onTimeSelected = { eventTimestampMillis = it },
+        title = "Log custom action ✨",
+        accentColor = CustomActionColor
+    ) {
+        EventTimeSelector(
+            selectedTimeMillis = eventTimestampMillis,
+            onTimeSelected = { eventTimestampMillis = it },
+            accentColor = CustomActionColor
+        )
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        Text(
+            text = "Anything misc — crying, outdoors, play…",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(10.dp))
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            customActionSuggestions.forEach { suggestion ->
+                SquareChoiceChip(
+                    selected = titleText.equals(suggestion, ignoreCase = true),
+                    onClick = { titleText = suggestion },
+                    label = suggestion,
                     accentColor = CustomActionColor
                 )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Text(
-                    text = "Anything misc — crying, outdoors, play…",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                FlowRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    customActionSuggestions.forEach { suggestion ->
-                        SquareChoiceChip(
-                            selected = titleText.equals(suggestion, ignoreCase = true),
-                            onClick = { titleText = suggestion },
-                            label = suggestion,
-                            accentColor = CustomActionColor
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(10.dp))
-                OutlinedTextField(
-                    value = titleText,
-                    onValueChange = { titleText = it },
-                    label = { Text("What happened?") },
-                    placeholder = { Text("e.g. Went outside for sun") },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("custom_action_title"),
-                    shape = RoundedCornerShape(12.dp),
-                    singleLine = true
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = notesText,
-                    onValueChange = { notesText = it },
-                    label = { Text("Notes (optional)") },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
-                )
-            }
-        },
-        confirmButton = {
-            SquareActionButton(
-                onClick = {
-                    val title = titleText.trim()
-                    if (title.isNotEmpty()) onConfirm(title, notesText.trim(), eventTimestampMillis)
-                },
-                enabled = titleText.trim().isNotEmpty(),
-                containerColor = CustomActionColor,
-                text = "Save",
-                modifier = Modifier.testTag("custom_action_save")
-            )
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
             }
         }
-    )
+        Spacer(modifier = Modifier.height(12.dp))
+        OutlinedTextField(
+            value = titleText,
+            onValueChange = { titleText = it },
+            label = { Text("What happened?") },
+            placeholder = { Text("e.g. Went outside for sun") },
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("custom_action_title"),
+            shape = RoundedCornerShape(12.dp),
+            singleLine = true
+        )
+        Spacer(modifier = Modifier.height(10.dp))
+        OutlinedTextField(
+            value = notesText,
+            onValueChange = { notesText = it },
+            label = { Text("Notes (optional)") },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp)
+        )
+
+        Spacer(modifier = Modifier.height(18.dp))
+
+        SquareActionButton(
+            onClick = {
+                val title = titleText.trim()
+                if (title.isNotEmpty()) onConfirm(title, notesText.trim(), eventTimestampMillis)
+            },
+            enabled = titleText.trim().isNotEmpty(),
+            containerColor = CustomActionColor,
+            text = "Save",
+            modifier = Modifier.testTag("custom_action_save")
+        )
+    }
 }
 
 @Composable
@@ -1292,40 +1365,43 @@ fun SetFavoriteActionDialog(
     )
     var selectedType by remember { mutableStateOf(currentType) }
 
-    AlertDialog(
+    ActionModalBottomSheet(
         onDismissRequest = onDismiss,
-        title = {
-            Text(
-                text = "Choose favorite action",
-                fontWeight = FontWeight.Bold,
-                color = FavoriteActionColor
-            )
-        },
-        text = {
-            Column(
+        title = "Choose favorite action",
+        accentColor = FavoriteActionColor
+    ) {
+        Text(
+            text = "This shows as a big quick-action button on the dashboard.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(10.dp))
+        options.forEach { (type, label) ->
+            SquareChoiceChip(
+                selected = selectedType == type,
+                onClick = { selectedType = type },
+                label = label,
+                accentColor = FavoriteActionColor,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                Text(
-                    text = "This shows as a big quick-action button on the dashboard.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-                options.forEach { (type, label) ->
-                    SquareChoiceChip(
-                        selected = selectedType == type,
-                        onClick = { selectedType = type },
-                        label = label,
-                        accentColor = FavoriteActionColor,
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                    .padding(vertical = 2.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(18.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            if (currentType != null) {
+                TextButton(
+                    onClick = onClear,
+                    modifier = Modifier.weight(1f).heightIn(min = 52.dp)
+                ) {
+                    Text("Clear Favorite")
                 }
             }
-        },
-        confirmButton = {
             SquareActionButton(
                 onClick = {
                     val type = selectedType ?: return@SquareActionButton
@@ -1335,23 +1411,11 @@ fun SetFavoriteActionDialog(
                 },
                 enabled = selectedType != null,
                 containerColor = FavoriteActionColor,
-                text = "Save",
-                modifier = Modifier.testTag("favorite_action_save")
+                text = "Save Favorite",
+                modifier = Modifier.weight(1f).testTag("favorite_action_save")
             )
-        },
-        dismissButton = {
-            Row {
-                if (currentType != null) {
-                    TextButton(onClick = onClear) {
-                        Text("Clear")
-                    }
-                }
-                TextButton(onClick = onDismiss) {
-                    Text("Cancel")
-                }
-            }
         }
-    )
+    }
 }
 
 @Composable
@@ -1363,60 +1427,44 @@ fun LogTemperatureDialog(
     var notesText by remember { mutableStateOf("") }
     var eventTimestampMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
-    AlertDialog(
+    ActionModalBottomSheet(
         onDismissRequest = onDismiss,
-        title = {
-            Text(
-                text = "Log Temperature 🌡️",
-                fontWeight = FontWeight.Bold,
-                color = HealthColor
-            )
-        },
-        text = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
-            ) {
-                EventTimeSelector(
-                    selectedTimeMillis = eventTimestampMillis,
-                    onTimeSelected = { eventTimestampMillis = it },
-                    accentColor = HealthColor
-                )
+        title = "Log Temperature 🌡️",
+        accentColor = HealthColor
+    ) {
+        EventTimeSelector(
+            selectedTimeMillis = eventTimestampMillis,
+            onTimeSelected = { eventTimestampMillis = it },
+            accentColor = HealthColor
+        )
 
-                Spacer(modifier = Modifier.height(14.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
-                TemperatureSliderWithGauge(
-                    tempCelsius = tempCelsius,
-                    onTempChanged = { tempCelsius = it }
-                )
+        TemperatureSliderWithGauge(
+            tempCelsius = tempCelsius,
+            onTempChanged = { tempCelsius = it }
+        )
 
-                Spacer(modifier = Modifier.height(10.dp))
+        Spacer(modifier = Modifier.height(14.dp))
 
-                OutlinedTextField(
-                    value = notesText,
-                    onValueChange = { notesText = it },
-                    label = { Text("Notes (Temporal, Axillary, Rectal)") },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
-                )
-            }
-        },
-        confirmButton = {
-            SquareActionButton(
-                onClick = {
-                    onConfirm(tempCelsius, notesText, eventTimestampMillis)
-                },
-                containerColor = HealthColor,
-                text = "Log Temp"
-            )
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
-            }
-        }
-    )
+        OutlinedTextField(
+            value = notesText,
+            onValueChange = { notesText = it },
+            label = { Text("Notes (Temporal, Axillary, Rectal)") },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp)
+        )
+
+        Spacer(modifier = Modifier.height(18.dp))
+
+        SquareActionButton(
+            onClick = {
+                onConfirm(tempCelsius, notesText, eventTimestampMillis)
+            },
+            containerColor = HealthColor,
+            text = "Log Temp"
+        )
+    }
 }
 
 @Composable
@@ -1430,91 +1478,74 @@ fun AddGrowthDialog(
     var notesText by remember { mutableStateOf("Pediatrician checkup") }
     var eventTimestampMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
-    AlertDialog(
+    ActionModalBottomSheet(
         onDismissRequest = onDismiss,
-        title = {
-            Text(
-                text = "Record Growth Measure 📈",
-                fontWeight = FontWeight.Bold,
-                color = HealthColor
-            )
-        },
-        text = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
-            ) {
-                EventTimeSelector(
-                    selectedTimeMillis = eventTimestampMillis,
-                    onTimeSelected = { eventTimestampMillis = it },
-                    accentColor = HealthColor
-                )
+        title = "Record Growth Measure 📈",
+        accentColor = HealthColor
+    ) {
+        EventTimeSelector(
+            selectedTimeMillis = eventTimestampMillis,
+            onTimeSelected = { eventTimestampMillis = it },
+            accentColor = HealthColor
+        )
 
-                Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(14.dp))
 
-                OutlinedTextField(
-                    value = weightText,
-                    onValueChange = { weightText = it },
-                    label = { Text("Weight (kg)") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
-                )
+        OutlinedTextField(
+            value = weightText,
+            onValueChange = { weightText = it },
+            label = { Text("Weight (kg)") },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp)
+        )
 
-                Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
-                OutlinedTextField(
-                    value = heightText,
-                    onValueChange = { heightText = it },
-                    label = { Text("Height (cm)") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
-                )
+        OutlinedTextField(
+            value = heightText,
+            onValueChange = { heightText = it },
+            label = { Text("Height (cm)") },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp)
+        )
 
-                Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
-                OutlinedTextField(
-                    value = headText,
-                    onValueChange = { headText = it },
-                    label = { Text("Head Circumference (cm)") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
-                )
+        OutlinedTextField(
+            value = headText,
+            onValueChange = { headText = it },
+            label = { Text("Head Circumference (cm)") },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp)
+        )
 
-                Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
-                OutlinedTextField(
-                    value = notesText,
-                    onValueChange = { notesText = it },
-                    label = { Text("Notes") },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
-                )
-            }
-        },
-        confirmButton = {
-            SquareActionButton(
-                onClick = {
-                    val w = weightText.toDoubleOrNull() ?: 5.8
-                    val h = heightText.toDoubleOrNull() ?: 60.0
-                    val head = headText.toDoubleOrNull() ?: 39.5
-                    onConfirm(w, h, head, notesText, eventTimestampMillis)
-                },
-                containerColor = HealthColor,
-                text = "Save Measurement"
-            )
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
-            }
-        }
-    )
+        OutlinedTextField(
+            value = notesText,
+            onValueChange = { notesText = it },
+            label = { Text("Notes") },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp)
+        )
+
+        Spacer(modifier = Modifier.height(18.dp))
+
+        SquareActionButton(
+            onClick = {
+                val weight = weightText.toDoubleOrNull() ?: 0.0
+                val height = heightText.toDoubleOrNull() ?: 0.0
+                val head = headText.toDoubleOrNull() ?: 0.0
+                onConfirm(weight, height, head, notesText, eventTimestampMillis)
+            },
+            containerColor = HealthColor,
+            text = "Save Growth Measure"
+        )
+    }
 }
-
 
 @Composable
 fun AddCaregiverDialog(
@@ -1526,81 +1557,70 @@ fun AddCaregiverDialog(
     var selectedRole by remember { mutableStateOf("Caregiver") }
     var pinText by remember { mutableStateOf("1234") }
 
-    AlertDialog(
+    ActionModalBottomSheet(
         onDismissRequest = onDismiss,
-        title = {
-            Text(
-                text = "Connect Family Caregiver 👨‍👩‍👧",
-                fontWeight = FontWeight.Bold
-            )
-        },
-        text = {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                OutlinedTextField(
-                    value = nameText,
-                    onValueChange = { nameText = it },
-                    label = { Text("Caregiver Name (e.g. Alex, Sarah, Grandma)") },
-                    modifier = Modifier.fillMaxWidth().testTag("add_caregiver_name_input"),
-                    shape = RoundedCornerShape(12.dp)
+        title = "Connect Family Caregiver 👨‍👩‍👧"
+    ) {
+        OutlinedTextField(
+            value = nameText,
+            onValueChange = { nameText = it },
+            label = { Text("Caregiver Name (e.g. Alex, Sarah, Grandma)") },
+            modifier = Modifier.fillMaxWidth().testTag("add_caregiver_name_input"),
+            shape = RoundedCornerShape(12.dp)
+        )
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        OutlinedTextField(
+            value = relationshipText,
+            onValueChange = { relationshipText = it },
+            label = { Text("Relationship (Mom, Dad, Babysitter, Pediatrician)") },
+            modifier = Modifier.fillMaxWidth().testTag("add_caregiver_rel_input"),
+            shape = RoundedCornerShape(12.dp)
+        )
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        OutlinedTextField(
+            value = pinText,
+            onValueChange = { if (it.length <= 4) pinText = it },
+            label = { Text("4-Digit Security PIN") },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+            modifier = Modifier.fillMaxWidth().testTag("add_caregiver_pin_input"),
+            shape = RoundedCornerShape(12.dp)
+        )
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        Text("Permission Role:", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+        Spacer(modifier = Modifier.height(6.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            listOf("Admin", "Caregiver", "Viewer").forEach { role ->
+                SquareChoiceChip(
+                    selected = (selectedRole == role),
+                    onClick = { selectedRole = role },
+                    label = role,
+                    modifier = Modifier.weight(1f)
                 )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                OutlinedTextField(
-                    value = relationshipText,
-                    onValueChange = { relationshipText = it },
-                    label = { Text("Relationship (Mom, Dad, Babysitter, Pediatrician)") },
-                    modifier = Modifier.fillMaxWidth().testTag("add_caregiver_rel_input"),
-                    shape = RoundedCornerShape(12.dp)
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                OutlinedTextField(
-                    value = pinText,
-                    onValueChange = { if (it.length <= 4) pinText = it },
-                    label = { Text("4-Digit Security PIN") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                    modifier = Modifier.fillMaxWidth().testTag("add_caregiver_pin_input"),
-                    shape = RoundedCornerShape(12.dp)
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Text("Permission Role:", style = MaterialTheme.typography.bodyMedium)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    listOf("Admin", "Caregiver", "Viewer").forEach { role ->
-                        FilterChip(
-                            selected = (selectedRole == role),
-                            onClick = { selectedRole = role },
-                            label = { Text(role) }
-                        )
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    if (nameText.isNotBlank()) {
-                        val pin = if (pinText.length == 4) pinText else "1234"
-                        onConfirm(nameText, relationshipText, selectedRole, pin)
-                    }
-                },
-                modifier = Modifier.testTag("confirm_add_caregiver_btn")
-            ) {
-                Text("Add Caregiver", fontWeight = FontWeight.Bold)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
             }
         }
-    )
+
+        Spacer(modifier = Modifier.height(18.dp))
+
+        SquareActionButton(
+            onClick = {
+                if (nameText.isNotBlank()) {
+                    val pin = if (pinText.length == 4) pinText else "1234"
+                    onConfirm(nameText, relationshipText, selectedRole, pin)
+                }
+            },
+            text = "Add Caregiver",
+            modifier = Modifier.testTag("confirm_add_caregiver_btn")
+        )
+    }
 }
 
 @Composable
@@ -1612,65 +1632,52 @@ fun EnterPinDialog(
     var pinText by remember { mutableStateOf("") }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
-    AlertDialog(
+    ActionModalBottomSheet(
         onDismissRequest = onDismiss,
-        title = {
-            Text(
-                text = "Enter Security PIN 🔒",
-                fontWeight = FontWeight.Bold
-            )
-        },
-        text = {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    text = "Specify identity: Verify 4-digit PIN for $caregiverName to activate real-time caregiver logging",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+        title = "Enter Security PIN 🔒"
+    ) {
+        Text(
+            text = "Specify identity: Verify 4-digit PIN for $caregiverName to activate real-time caregiver logging",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
 
-                Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(14.dp))
 
-                OutlinedTextField(
-                    value = pinText,
-                    onValueChange = {
-                        if (it.length <= 4) {
-                            pinText = it
-                            errorMessage = null
-                        }
-                    },
-                    label = { Text("4-Digit PIN") },
-                    isError = errorMessage != null,
-                    supportingText = {
-                        if (errorMessage != null) {
-                            Text(errorMessage!!, color = MaterialTheme.colorScheme.error)
-                        }
-                    },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                    modifier = Modifier.fillMaxWidth().testTag("pin_entry_input"),
-                    shape = RoundedCornerShape(12.dp)
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    if (pinText.length == 4) {
-                        onConfirm(pinText)
-                    } else {
-                        errorMessage = "Please enter 4 digits"
-                    }
-                },
-                modifier = Modifier.testTag("submit_pin_btn")
-            ) {
-                Text("Verify & Switch", fontWeight = FontWeight.Bold)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
-            }
-        }
-    )
+        OutlinedTextField(
+            value = pinText,
+            onValueChange = {
+                if (it.length <= 4) {
+                    pinText = it
+                    errorMessage = null
+                }
+            },
+            label = { Text("4-Digit PIN") },
+            isError = errorMessage != null,
+            supportingText = {
+                if (errorMessage != null) {
+                    Text(errorMessage!!, color = MaterialTheme.colorScheme.error)
+                }
+            },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+            modifier = Modifier.fillMaxWidth().testTag("pin_entry_input"),
+            shape = RoundedCornerShape(12.dp)
+        )
+
+        Spacer(modifier = Modifier.height(18.dp))
+
+        SquareActionButton(
+            onClick = {
+                if (pinText.length == 4) {
+                    onConfirm(pinText)
+                } else {
+                    errorMessage = "Please enter 4 digits"
+                }
+            },
+            text = "Verify & Switch",
+            modifier = Modifier.testTag("submit_pin_btn")
+        )
+    }
 }
 
 @Composable
@@ -1685,134 +1692,115 @@ fun SetupBabyProfileDialog(
     var napIntervalHoursText by remember { mutableStateOf(((initialProfile?.targetNapIntervalMinutes ?: 150) / 60.0).toString()) }
     var caregiverNameText by remember { mutableStateOf(initialProfile?.primaryCaregiverName ?: "Mom") }
 
-    AlertDialog(
+    ActionModalBottomSheet(
         onDismissRequest = onDismiss,
-        title = {
-            Column {
-                Text(
-                    text = if (initialProfile?.isInitialSetupDone == true) "Edit Baby Profile 👶" else "Welcome! Set Up Your Baby's Profile 👶",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 20.sp
+        title = if (initialProfile?.isInitialSetupDone == true) "Edit Baby Profile 👶" else "Setup Baby Profile 👶"
+    ) {
+        Text(
+            text = "Personalize your baby's name, routine intervals, and system alerts",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+
+        OutlinedTextField(
+            value = nameText,
+            onValueChange = { nameText = it },
+            label = { Text("Baby's Name (e.g. Liam, Maya, Noah)") },
+            singleLine = true,
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("setup_baby_name_input"),
+            shape = RoundedCornerShape(12.dp)
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Text(
+            text = "Gender",
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            listOf("Boy", "Girl", "Other").forEach { gender ->
+                SquareChoiceChip(
+                    selected = selectedGender == gender,
+                    onClick = { selectedGender = gender },
+                    label = gender,
+                    modifier = Modifier.weight(1f).testTag("gender_chip_$gender")
                 )
-                Text(
-                    text = "Personalize your baby's name, routine intervals, and system alerts",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        },
-        text = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
-            ) {
-                OutlinedTextField(
-                    value = nameText,
-                    onValueChange = { nameText = it },
-                    label = { Text("Baby's Name (e.g. Liam, Maya, Noah)") },
-                    singleLine = true,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("setup_baby_name_input"),
-                    shape = RoundedCornerShape(12.dp)
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Text(
-                    text = "Gender",
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.Bold
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    listOf("Boy", "Girl", "Other").forEach { gender ->
-                        FilterChip(
-                            selected = selectedGender == gender,
-                            onClick = { selectedGender = gender },
-                            label = { Text(gender) },
-                            modifier = Modifier.testTag("gender_chip_$gender")
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                OutlinedTextField(
-                    value = feedIntervalHoursText,
-                    onValueChange = { feedIntervalHoursText = it },
-                    label = { Text("Target Feeding Interval (Hours, e.g. 3.0)") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("setup_feed_interval_input"),
-                    shape = RoundedCornerShape(12.dp)
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                OutlinedTextField(
-                    value = napIntervalHoursText,
-                    onValueChange = { napIntervalHoursText = it },
-                    label = { Text("Target Wake Window / Nap Interval (Hours, e.g. 2.5)") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("setup_nap_interval_input"),
-                    shape = RoundedCornerShape(12.dp)
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                OutlinedTextField(
-                    value = caregiverNameText,
-                    onValueChange = { caregiverNameText = it },
-                    label = { Text("Primary Parent / Logger Name (e.g. Mom, Dad)") },
-                    singleLine = true,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("setup_caregiver_name_input"),
-                    shape = RoundedCornerShape(12.dp)
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    val finalName = nameText.ifBlank { "Your Baby" }
-                    val feedHours = feedIntervalHoursText.toDoubleOrNull() ?: 3.0
-                    val napHours = napIntervalHoursText.toDoubleOrNull() ?: 2.5
-                    val feedMin = (feedHours * 60).toInt().coerceIn(30, 480)
-                    val napMin = (napHours * 60).toInt().coerceIn(30, 480)
-
-                    val newProfile = (initialProfile ?: BabyProfile()).copy(
-                        name = finalName,
-                        gender = selectedGender,
-                        targetFeedingIntervalMinutes = feedMin,
-                        targetNapIntervalMinutes = napMin,
-                        primaryCaregiverName = caregiverNameText.ifBlank { "Mom" },
-                        isInitialSetupDone = true
-                    )
-                    onSaveProfile(newProfile)
-                },
-                modifier = Modifier.testTag("save_profile_setup_btn")
-            ) {
-                Text("Save Profile & Launch", fontWeight = FontWeight.Bold)
-            }
-        },
-        dismissButton = {
-            if (initialProfile?.isInitialSetupDone == true) {
-                TextButton(onClick = onDismiss) {
-                    Text("Cancel")
-                }
             }
         }
-    )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        OutlinedTextField(
+            value = feedIntervalHoursText,
+            onValueChange = { feedIntervalHoursText = it },
+            label = { Text("Target Feeding Interval (Hours, e.g. 3.0)") },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            singleLine = true,
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("setup_feed_interval_input"),
+            shape = RoundedCornerShape(12.dp)
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        OutlinedTextField(
+            value = napIntervalHoursText,
+            onValueChange = { napIntervalHoursText = it },
+            label = { Text("Target Wake Window / Nap Interval (Hours, e.g. 2.5)") },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            singleLine = true,
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("setup_nap_interval_input"),
+            shape = RoundedCornerShape(12.dp)
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        OutlinedTextField(
+            value = caregiverNameText,
+            onValueChange = { caregiverNameText = it },
+            label = { Text("Primary Parent / Logger Name (e.g. Mom, Dad)") },
+            singleLine = true,
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("setup_caregiver_name_input"),
+            shape = RoundedCornerShape(12.dp)
+        )
+
+        Spacer(modifier = Modifier.height(18.dp))
+
+        SquareActionButton(
+            onClick = {
+                val finalName = nameText.ifBlank { "Your Baby" }
+                val feedHours = feedIntervalHoursText.toDoubleOrNull() ?: 3.0
+                val napHours = napIntervalHoursText.toDoubleOrNull() ?: 2.5
+                val feedMin = (feedHours * 60).toInt().coerceIn(30, 480)
+                val napMin = (napHours * 60).toInt().coerceIn(30, 480)
+
+                val newProfile = (initialProfile ?: BabyProfile()).copy(
+                    name = finalName,
+                    gender = selectedGender,
+                    targetFeedingIntervalMinutes = feedMin,
+                    targetNapIntervalMinutes = napMin,
+                    primaryCaregiverName = caregiverNameText.ifBlank { "Mom" },
+                    isInitialSetupDone = true
+                )
+                onSaveProfile(newProfile)
+            },
+            text = "Save Profile & Launch",
+            modifier = Modifier.testTag("save_profile_setup_btn")
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1836,8 +1824,8 @@ fun EditActivityLogDialog(
         mutableStateOf(if (log.rightBreastDurationSec > 0) (log.rightBreastDurationSec / 60).toString() else "0")
     }
 
-    var startMillis by remember { mutableStateOf(log.startTimeMillis) }
-    var endMillis by remember { mutableStateOf(log.endTimeMillis) }
+    var startMillis by remember { mutableLongStateOf(log.startTimeMillis) }
+    var endMillis by remember { mutableLongStateOf(log.endTimeMillis ?: log.startTimeMillis) }
     var showStartDatePicker by remember { mutableStateOf(false) }
     var showStartTimePicker by remember { mutableStateOf(false) }
     var showEndDatePicker by remember { mutableStateOf(false) }
@@ -1846,181 +1834,172 @@ fun EditActivityLogDialog(
     val dateFormat = remember { SimpleDateFormat("MMM d, yyyy", Locale.getDefault()) }
     val timeFormat = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
 
-    AlertDialog(
+    ActionModalBottomSheet(
         onDismissRequest = onDismiss,
-        title = {
-            Text(
-                text = "Edit ${log.activityType.replace('_', ' ').lowercase().replaceFirstChar { it.titlecase(Locale.getDefault()) }}",
-                fontWeight = FontWeight.Bold
+        title = "Edit ${log.activityType.replace('_', ' ').lowercase().replaceFirstChar { it.titlecase(Locale.getDefault()) }}"
+    ) {
+        Text("Start Time", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+        Spacer(modifier = Modifier.height(4.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            SquareChoiceChip(
+                selected = false,
+                onClick = { showStartDatePicker = true },
+                label = dateFormat.format(Date(startMillis)),
+                modifier = Modifier.weight(1f)
             )
-        },
-        text = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text("Start", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(
-                        selected = false,
-                        onClick = { showStartDatePicker = true },
-                        label = { Text(dateFormat.format(Date(startMillis))) }
-                    )
-                    FilterChip(
-                        selected = false,
-                        onClick = { showStartTimePicker = true },
-                        label = { Text(timeFormat.format(Date(startMillis))) }
-                    )
-                }
+            SquareChoiceChip(
+                selected = false,
+                onClick = { showStartTimePicker = true },
+                label = timeFormat.format(Date(startMillis)),
+                modifier = Modifier.weight(1f)
+            )
+        }
 
-                if (endMillis != null) {
-                    Text("End", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterChip(
-                            selected = false,
-                            onClick = { showEndDatePicker = true },
-                            label = { Text(dateFormat.format(Date(endMillis!!))) }
-                        )
-                        FilterChip(
-                            selected = false,
-                            onClick = { showEndTimePicker = true },
-                            label = { Text(timeFormat.format(Date(endMillis!!))) }
-                        )
-                    }
-                }
+        Spacer(modifier = Modifier.height(12.dp))
 
-                when (log.activityType) {
-                    ActivityTypes.BOTTLE, ActivityTypes.PUMPING -> {
-                        OutlinedTextField(
-                            value = volumeText,
-                            onValueChange = { volumeText = it },
-                            label = { Text("Volume (ml)") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp)
-                        )
-                        if (log.activityType == ActivityTypes.BOTTLE) {
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                listOf("Breast Milk", "Formula", "Water").forEach { type ->
-                                    FilterChip(
-                                        selected = milkType == type,
-                                        onClick = { milkType = type },
-                                        label = { Text(type) }
-                                    )
-                                }
-                            }
-                        }
-                    }
-                    ActivityTypes.DIAPER -> {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            listOf("Wet", "Dirty", "Both", "Dry").forEach { status ->
-                                FilterChip(
-                                    selected = diaperStatus == status,
-                                    onClick = { diaperStatus = status },
-                                    label = { Text(status) }
-                                )
-                            }
-                        }
-                    }
-                    ActivityTypes.MEDICINE -> {
-                        OutlinedTextField(
-                            value = medicineName,
-                            onValueChange = { medicineName = it },
-                            label = { Text("Medicine name") },
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp)
-                        )
-                        OutlinedTextField(
-                            value = dosage,
-                            onValueChange = { dosage = it },
-                            label = { Text("Dosage") },
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp)
-                        )
-                    }
-                    ActivityTypes.TEMPERATURE -> {
-                        OutlinedTextField(
-                            value = tempText,
-                            onValueChange = { tempText = it },
-                            label = { Text("Temperature (°C)") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp)
-                        )
-                    }
-                    ActivityTypes.BREASTFEEDING -> {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedTextField(
-                                value = leftMinText,
-                                onValueChange = { leftMinText = it },
-                                label = { Text("Left (min)") },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(12.dp)
-                            )
-                            OutlinedTextField(
-                                value = rightMinText,
-                                onValueChange = { rightMinText = it },
-                                label = { Text("Right (min)") },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(12.dp)
-                            )
-                        }
-                    }
-                }
+        Text("End Time", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+        Spacer(modifier = Modifier.height(4.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            SquareChoiceChip(
+                selected = false,
+                onClick = { showEndDatePicker = true },
+                label = dateFormat.format(Date(endMillis)),
+                modifier = Modifier.weight(1f)
+            )
+            SquareChoiceChip(
+                selected = false,
+                onClick = { showEndTimePicker = true },
+                label = timeFormat.format(Date(endMillis)),
+                modifier = Modifier.weight(1f)
+            )
+        }
 
+        Spacer(modifier = Modifier.height(14.dp))
+
+        when (log.activityType) {
+            ActivityTypes.BOTTLE -> {
                 OutlinedTextField(
-                    value = notesText,
-                    onValueChange = { notesText = it },
-                    label = { Text("Notes") },
+                    value = volumeText,
+                    onValueChange = { volumeText = it },
+                    label = { Text("Volume (ml)") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                    listOf("Breast Milk", "Formula", "Water").forEach { type ->
+                        SquareChoiceChip(
+                            selected = (milkType == type),
+                            onClick = { milkType = type },
+                            label = type,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+            }
+            ActivityTypes.DIAPER -> {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                    listOf("Wet", "Dirty", "Both", "Dry").forEach { status ->
+                        SquareChoiceChip(
+                            selected = (diaperStatus == status),
+                            onClick = { diaperStatus = status },
+                            label = status,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+            }
+            ActivityTypes.MEDICINE -> {
+                OutlinedTextField(
+                    value = medicineName,
+                    onValueChange = { medicineName = it },
+                    label = { Text("Medicine Name") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = dosage,
+                    onValueChange = { dosage = it },
+                    label = { Text("Dosage") },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp)
                 )
             }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    val end = endMillis
-                    val safeEnd = if (end != null && end < startMillis) startMillis else end
-                    val leftSec = (leftMinText.toLongOrNull() ?: 0L) * 60L
-                    val rightSec = (rightMinText.toLongOrNull() ?: 0L) * 60L
-                    onConfirm(
-                        log.copy(
-                            startTimeMillis = startMillis,
-                            endTimeMillis = safeEnd,
-                            notes = notesText,
-                            volumeMl = volumeText.toIntOrNull() ?: log.volumeMl,
-                            milkType = milkType,
-                            diaperStatus = diaperStatus,
-                            medicineName = medicineName.ifBlank { null },
-                            dosage = dosage.ifBlank { null },
-                            temperatureCelsius = tempText.toDoubleOrNull() ?: log.temperatureCelsius,
-                            leftBreastDurationSec = leftSec,
-                            rightBreastDurationSec = rightSec
-                        )
+            ActivityTypes.TEMPERATURE -> {
+                OutlinedTextField(
+                    value = tempText,
+                    onValueChange = { tempText = it },
+                    label = { Text("Temperature (°C)") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                )
+            }
+            ActivityTypes.BREASTFEEDING -> {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    OutlinedTextField(
+                        value = leftMinText,
+                        onValueChange = { leftMinText = it },
+                        label = { Text("Left (min)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                    OutlinedTextField(
+                        value = rightMinText,
+                        onValueChange = { rightMinText = it },
+                        label = { Text("Right (min)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp)
                     )
                 }
-            ) {
-                Text("Save", fontWeight = FontWeight.Bold)
             }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
         }
-    )
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        OutlinedTextField(
+            value = notesText,
+            onValueChange = { notesText = it },
+            label = { Text("Notes") },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp)
+        )
+
+        Spacer(modifier = Modifier.height(18.dp))
+
+        SquareActionButton(
+            onClick = {
+                val updated = log.copy(
+                    startTimeMillis = startMillis,
+                    endTimeMillis = endMillis,
+                    notes = notesText,
+                    volumeMl = volumeText.toIntOrNull() ?: log.volumeMl,
+                    milkType = milkType,
+                    diaperStatus = diaperStatus,
+                    medicineName = medicineName.ifBlank { log.medicineName },
+                    dosage = dosage.ifBlank { log.dosage },
+                    temperatureCelsius = tempText.toDoubleOrNull() ?: log.temperatureCelsius,
+                    leftBreastDurationSec = ((leftMinText.toIntOrNull() ?: 0) * 60).toLong(),
+                    rightBreastDurationSec = ((rightMinText.toIntOrNull() ?: 0) * 60).toLong()
+                )
+                onConfirm(updated)
+            },
+            text = "Save Changes"
+        )
+    }
 
     if (showStartDatePicker) {
-        val state = rememberDatePickerState(initialSelectedDateMillis = startMillis)
+        val dateState = rememberDatePickerState(initialSelectedDateMillis = startMillis)
         DatePickerDialog(
             onDismissRequest = { showStartDatePicker = false },
             confirmButton = {
                 TextButton(onClick = {
-                    state.selectedDateMillis?.let { picked ->
-                        startMillis = mergeDateKeepingTime(picked, startMillis)
+                    dateState.selectedDateMillis?.let { newDate ->
+                        startMillis = mergeDateKeepingTime(newDate, startMillis)
                     }
                     showStartDatePicker = false
                 }) { Text("OK") }
@@ -2029,40 +2008,41 @@ fun EditActivityLogDialog(
                 TextButton(onClick = { showStartDatePicker = false }) { Text("Cancel") }
             }
         ) {
-            DatePicker(state = state)
+            DatePicker(state = dateState)
         }
     }
 
     if (showStartTimePicker) {
         val cal = Calendar.getInstance().apply { timeInMillis = startMillis }
-        val state = rememberTimePickerState(
+        val timeState = rememberTimePickerState(
             initialHour = cal.get(Calendar.HOUR_OF_DAY),
             initialMinute = cal.get(Calendar.MINUTE),
             is24Hour = false
         )
         AlertDialog(
             onDismissRequest = { showStartTimePicker = false },
+            title = { Text("Set Start Time", fontWeight = FontWeight.Bold) },
+            text = { TimePicker(state = timeState) },
             confirmButton = {
                 TextButton(onClick = {
-                    startMillis = mergeTimeKeepingDate(startMillis, state.hour, state.minute)
+                    startMillis = mergeTimeKeepingDate(startMillis, timeState.hour, timeState.minute)
                     showStartTimePicker = false
                 }) { Text("OK") }
             },
             dismissButton = {
                 TextButton(onClick = { showStartTimePicker = false }) { Text("Cancel") }
-            },
-            text = { TimePicker(state = state) }
+            }
         )
     }
 
-    if (showEndDatePicker && endMillis != null) {
-        val state = rememberDatePickerState(initialSelectedDateMillis = endMillis)
+    if (showEndDatePicker) {
+        val dateState = rememberDatePickerState(initialSelectedDateMillis = endMillis)
         DatePickerDialog(
             onDismissRequest = { showEndDatePicker = false },
             confirmButton = {
                 TextButton(onClick = {
-                    state.selectedDateMillis?.let { picked ->
-                        endMillis = mergeDateKeepingTime(picked, endMillis!!)
+                    dateState.selectedDateMillis?.let { newDate ->
+                        endMillis = mergeDateKeepingTime(newDate, endMillis)
                     }
                     showEndDatePicker = false
                 }) { Text("OK") }
@@ -2071,51 +2051,54 @@ fun EditActivityLogDialog(
                 TextButton(onClick = { showEndDatePicker = false }) { Text("Cancel") }
             }
         ) {
-            DatePicker(state = state)
+            DatePicker(state = dateState)
         }
     }
 
-    if (showEndTimePicker && endMillis != null) {
-        val cal = Calendar.getInstance().apply { timeInMillis = endMillis!! }
-        val state = rememberTimePickerState(
+    if (showEndTimePicker) {
+        val cal = Calendar.getInstance().apply { timeInMillis = endMillis }
+        val timeState = rememberTimePickerState(
             initialHour = cal.get(Calendar.HOUR_OF_DAY),
             initialMinute = cal.get(Calendar.MINUTE),
             is24Hour = false
         )
         AlertDialog(
             onDismissRequest = { showEndTimePicker = false },
+            title = { Text("Set End Time", fontWeight = FontWeight.Bold) },
+            text = { TimePicker(state = timeState) },
             confirmButton = {
                 TextButton(onClick = {
-                    endMillis = mergeTimeKeepingDate(endMillis!!, state.hour, state.minute)
+                    endMillis = mergeTimeKeepingDate(endMillis, timeState.hour, timeState.minute)
                     showEndTimePicker = false
                 }) { Text("OK") }
             },
             dismissButton = {
                 TextButton(onClick = { showEndTimePicker = false }) { Text("Cancel") }
-            },
-            text = { TimePicker(state = state) }
+            }
         )
     }
 }
 
-private fun mergeDateKeepingTime(dateMillis: Long, timeSourceMillis: Long): Long {
-    val dateCal = Calendar.getInstance().apply { timeInMillis = dateMillis }
-    val timeCal = Calendar.getInstance().apply { timeInMillis = timeSourceMillis }
+// Private Date/Time Merging Utilities
+private fun mergeDateKeepingTime(pickedDateMillis: Long, currentMillis: Long): Long {
+    val pickedCal = Calendar.getInstance().apply { timeInMillis = pickedDateMillis }
+    val currentCal = Calendar.getInstance().apply { timeInMillis = currentMillis }
+
     return Calendar.getInstance().apply {
-        set(Calendar.YEAR, dateCal.get(Calendar.YEAR))
-        set(Calendar.MONTH, dateCal.get(Calendar.MONTH))
-        set(Calendar.DAY_OF_MONTH, dateCal.get(Calendar.DAY_OF_MONTH))
-        set(Calendar.HOUR_OF_DAY, timeCal.get(Calendar.HOUR_OF_DAY))
-        set(Calendar.MINUTE, timeCal.get(Calendar.MINUTE))
-        set(Calendar.SECOND, timeCal.get(Calendar.SECOND))
+        set(Calendar.YEAR, pickedCal.get(Calendar.YEAR))
+        set(Calendar.MONTH, pickedCal.get(Calendar.MONTH))
+        set(Calendar.DAY_OF_MONTH, pickedCal.get(Calendar.DAY_OF_MONTH))
+        set(Calendar.HOUR_OF_DAY, currentCal.get(Calendar.HOUR_OF_DAY))
+        set(Calendar.MINUTE, currentCal.get(Calendar.MINUTE))
+        set(Calendar.SECOND, 0)
         set(Calendar.MILLISECOND, 0)
     }.timeInMillis
 }
 
-private fun mergeTimeKeepingDate(dateSourceMillis: Long, hour: Int, minute: Int): Long {
+private fun mergeTimeKeepingDate(currentMillis: Long, hourOfDay: Int, minute: Int): Long {
     return Calendar.getInstance().apply {
-        timeInMillis = dateSourceMillis
-        set(Calendar.HOUR_OF_DAY, hour)
+        timeInMillis = currentMillis
+        set(Calendar.HOUR_OF_DAY, hourOfDay)
         set(Calendar.MINUTE, minute)
         set(Calendar.SECOND, 0)
         set(Calendar.MILLISECOND, 0)

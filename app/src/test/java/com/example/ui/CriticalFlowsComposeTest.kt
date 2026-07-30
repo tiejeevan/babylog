@@ -40,6 +40,11 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
+import androidx.compose.runtime.CompositionLocalProvider
+import com.example.ui.dialogs.LocalUseBottomSheet
+
+import androidx.compose.ui.test.performScrollTo
+
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class CriticalFlowsComposeTest {
@@ -54,19 +59,21 @@ class CriticalFlowsComposeTest {
 
         composeRule.setContent {
             BabyCareTheme {
-                LogBottleDialog(
-                    onDismiss = {},
-                    onConfirm = { volume, milk, _, _ ->
-                        confirmedVolume = volume
-                        confirmedMilk = milk
-                    }
-                )
+                CompositionLocalProvider(LocalUseBottomSheet provides false) {
+                    LogBottleDialog(
+                        onDismiss = {},
+                        onConfirm = { volume, milk, _, _ ->
+                            confirmedVolume = volume
+                            confirmedMilk = milk
+                        }
+                    )
+                }
             }
         }
 
         composeRule.onNodeWithTag("chip_volume_180").performClick()
         composeRule.onNodeWithTag("chip_milk_Formula").performClick()
-        composeRule.onNodeWithTag("confirm_bottle_log").performClick()
+        composeRule.onNodeWithTag("confirm_bottle_log").performScrollTo().performClick()
 
         assertEquals(180, confirmedVolume)
         assertEquals("Formula", confirmedMilk)
@@ -78,15 +85,17 @@ class CriticalFlowsComposeTest {
 
         composeRule.setContent {
             BabyCareTheme {
-                LogDiaperDialog(
-                    onDismiss = {},
-                    onConfirm = { selected, _, _ -> status = selected }
-                )
+                CompositionLocalProvider(LocalUseBottomSheet provides false) {
+                    LogDiaperDialog(
+                        onDismiss = {},
+                        onConfirm = { selected, _, _ -> status = selected }
+                    )
+                }
             }
         }
 
         composeRule.onNodeWithTag("chip_diaper_Dirty").performClick()
-        composeRule.onNodeWithTag("confirm_diaper_log").performClick()
+        composeRule.onNodeWithTag("confirm_diaper_log").performScrollTo().performClick()
 
         assertEquals("Dirty", status)
     }
@@ -145,21 +154,23 @@ class CriticalFlowsComposeTest {
 
         composeRule.setContent {
             BabyCareTheme {
-                AddCaregiverDialog(
-                    onDismiss = {},
-                    onConfirm = { n, rel, _, p ->
-                        name = n
-                        relationship = rel
-                        pin = p
-                    }
-                )
+                CompositionLocalProvider(LocalUseBottomSheet provides false) {
+                    AddCaregiverDialog(
+                        onDismiss = {},
+                        onConfirm = { n, rel, _, p ->
+                            name = n
+                            relationship = rel
+                            pin = p
+                        }
+                    )
+                }
             }
         }
 
         composeRule.onNodeWithTag("add_caregiver_name_input").performTextInput("Alex")
         composeRule.onNodeWithTag("add_caregiver_rel_input").performTextReplacement("Uncle")
         composeRule.onNodeWithTag("add_caregiver_pin_input").performTextReplacement("4321")
-        composeRule.onNodeWithTag("confirm_add_caregiver_btn").performClick()
+        composeRule.onNodeWithTag("confirm_add_caregiver_btn").performScrollTo().performClick()
 
         assertEquals("Alex", name)
         assertEquals("Uncle", relationship)

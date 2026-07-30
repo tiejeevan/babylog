@@ -39,7 +39,9 @@ data class TodaySummary(
     val dirtyDiaperCount: Int = 0,
     val lastDiaperMinutesAgo: Long = -1,
     val totalPumpedVolumeMl: Int = 0,
-    val lastPumpedMinutesAgo: Long = -1
+    val lastPumpedMinutesAgo: Long = -1,
+    val dayOffset: Int = 0,
+    val dateLabel: String = "TODAY'S ROUTINE SUMMARY"
 )
 
 /**
@@ -269,9 +271,37 @@ object IntelligentNeedEngine {
         logs: List<ActivityLog>,
         currentTimeMillis: Long = System.currentTimeMillis()
     ): TodaySummary {
-        val startOfDayMillis = getStartOfDayMillis(currentTimeMillis)
+        return computeDaySummary(logs, 0, currentTimeMillis)
+    }
 
-        val todayLogs = logs.filter { it.startTimeMillis >= startOfDayMillis }
+    fun computeDaySummary(
+        logs: List<ActivityLog>,
+        dayOffset: Int = 0,
+        currentTimeMillis: Long = System.currentTimeMillis()
+    ): TodaySummary {
+        val cal = java.util.Calendar.getInstance()
+        cal.timeInMillis = currentTimeMillis
+        cal.add(java.util.Calendar.DAY_OF_YEAR, dayOffset)
+
+        cal.set(java.util.Calendar.HOUR_OF_DAY, 0)
+        cal.set(java.util.Calendar.MINUTE, 0)
+        cal.set(java.util.Calendar.SECOND, 0)
+        cal.set(java.util.Calendar.MILLISECOND, 0)
+        val startOfDayMillis = cal.timeInMillis
+
+        cal.set(java.util.Calendar.HOUR_OF_DAY, 23)
+        cal.set(java.util.Calendar.MINUTE, 59)
+        cal.set(java.util.Calendar.SECOND, 59)
+        cal.set(java.util.Calendar.MILLISECOND, 999)
+        val endOfDayMillis = cal.timeInMillis
+
+        val dayLogs = logs.filter { log ->
+            if (dayOffset == 0) {
+                log.startTimeMillis >= startOfDayMillis
+            } else {
+                log.startTimeMillis in startOfDayMillis..endOfDayMillis
+            }
+        }
 
         var feedVol = 0
         var feedCount = 0
@@ -281,7 +311,9 @@ object IntelligentNeedEngine {
         var dirtyDiapers = 0
         var pumpedVol = 0
 
-        todayLogs.forEach { log ->
+        val capTime = if (dayOffset == 0) currentTimeMillis else endOfDayMillis
+
+        dayLogs.forEach { log ->
             when (log.activityType) {
                 ActivityTypes.BOTTLE, ActivityTypes.BREASTFEEDING -> {
                     feedCount++
@@ -289,10 +321,12 @@ object IntelligentNeedEngine {
                 }
                 ActivityTypes.SLEEP -> {
                     napCount++
-                    if (log.endTimeMillis != null) {
-                        sleepMinutes += TimeUnit.MILLISECONDS.toMinutes(log.endTimeMillis - log.startTimeMillis)
-                    } else {
-                        sleepMinutes += TimeUnit.MILLISECONDS.toMinutes(currentTimeMillis - log.startTimeMillis)
+                    val sleepEnd = log.endTimeMillis ?: capTime
+                    val clampedStart = maxOf(log.startTimeMillis, startOfDayMillis)
+                    val clampedEnd = minOf(sleepEnd, endOfDayMillis)
+                    val duration = clampedEnd - clampedStart
+                    if (duration > 0) {
+                        sleepMinutes += TimeUnit.MILLISECONDS.toMinutes(duration)
                     }
                 }
                 ActivityTypes.DIAPER -> {
@@ -322,6 +356,15 @@ object IntelligentNeedEngine {
         val lastDiaperMin = lastDiaper?.let { TimeUnit.MILLISECONDS.toMinutes(currentTimeMillis - it.startTimeMillis) } ?: -1L
         val lastPumpedMin = lastPump?.let { TimeUnit.MILLISECONDS.toMinutes(currentTimeMillis - (it.endTimeMillis ?: it.startTimeMillis)) } ?: -1L
 
+        val dateLabel = when (dayOffset) {
+            0 -> "TODAY'S ROUTINE SUMMARY"
+            -1 -> "YESTERDAY'S ROUTINE SUMMARY"
+            else -> {
+                val sdf = java.text.SimpleDateFormat("EEE, MMM d", java.util.Locale.US)
+                "ROUTINE SUMMARY • ${sdf.format(java.util.Date(startOfDayMillis)).uppercase()}"
+            }
+        }
+
         return TodaySummary(
             totalFeedVolumeMl = feedVol,
             feedCount = feedCount,
@@ -333,7 +376,9 @@ object IntelligentNeedEngine {
             dirtyDiaperCount = dirtyDiapers,
             lastDiaperMinutesAgo = lastDiaperMin,
             totalPumpedVolumeMl = pumpedVol,
-            lastPumpedMinutesAgo = lastPumpedMin
+            lastPumpedMinutesAgo = lastPumpedMin,
+            dayOffset = dayOffset,
+            dateLabel = dateLabel
         )
     }
 
