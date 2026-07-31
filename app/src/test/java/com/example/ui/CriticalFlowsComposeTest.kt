@@ -339,4 +339,92 @@ class CriticalFlowsComposeTest {
         composeRule.onNodeWithTag("overlap_warning").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("confirm_intelligent_nap_btn").performScrollTo().assertIsDisplayed()
     }
+
+    @Test
+    fun suggestedNapCompactRowRestoresFullPromptCard() {
+        val gapStart = 1_000_000L
+        val gapEnd = gapStart + 3 * 3_600_000L
+        val prompt = com.example.engine.SmartSleepGapPrompt(
+            gapStartMillis = gapStart,
+            gapEndMillis = gapEnd,
+            prevActivity = null,
+            nextActivity = com.example.engine.TimelineAnchor(
+                activityType = "NOW",
+                title = "Now",
+                timeMillis = gapEnd
+            ),
+            intermediateActivities = emptyList(),
+            defaultNapStartMillis = gapStart + 60 * 60_000L,
+            defaultNapDurationMinutes = 45,
+            minutesSinceLastSleep = 180
+        )
+
+        composeRule.setContent {
+            var dismissed by remember { mutableStateOf(true) }
+            BabyCareTheme {
+                if (!dismissed) {
+                    com.example.ui.components.SmartSleepGapPromptCard(
+                        prompt = prompt,
+                        babyName = "Ava",
+                        onQuickLogNap = {},
+                        onAdjustTimeline = {},
+                        onDismiss = { dismissed = true }
+                    )
+                } else {
+                    com.example.ui.components.SuggestedNapCompactRow(
+                        prompt = prompt,
+                        onClick = { dismissed = false }
+                    )
+                }
+            }
+        }
+
+        composeRule.onNodeWithTag("suggested_nap_compact_row").assertIsDisplayed()
+        composeRule.onNodeWithTag("suggested_nap_compact_row").performClick()
+        composeRule.onNodeWithTag("smart_sleep_gap_prompt_card").assertIsDisplayed()
+    }
+
+    @Test
+    fun suggestedNapGapMarkerOpensAdjusterOnTap() {
+        val gapStart = 1_000_000L
+        val gapEnd = gapStart + 3 * 3_600_000L
+        val prompt = com.example.engine.SmartSleepGapPrompt(
+            gapStartMillis = gapStart,
+            gapEndMillis = gapEnd,
+            prevActivity = null,
+            nextActivity = com.example.engine.TimelineAnchor(
+                activityType = "NOW",
+                title = "Now",
+                timeMillis = gapEnd
+            ),
+            intermediateActivities = emptyList(),
+            defaultNapStartMillis = gapStart + 60 * 60_000L,
+            defaultNapDurationMinutes = 45,
+            minutesSinceLastSleep = 180
+        )
+        composeRule.setContent {
+            var showAdjuster by remember { mutableStateOf(false) }
+            BabyCareTheme {
+                CompositionLocalProvider(LocalUseBottomSheet provides false) {
+                    if (showAdjuster) {
+                        com.example.ui.dialogs.SmartNapAdjusterSheet(
+                            prompt = prompt,
+                            babyName = "Ava",
+                            onConfirm = { _, _ -> },
+                            onDismiss = { showAdjuster = false }
+                        )
+                    } else {
+                        com.example.ui.components.SuggestedNapGapMarkerCard(
+                            prompt = prompt,
+                            onClick = { showAdjuster = true }
+                        )
+                    }
+                }
+            }
+        }
+
+        composeRule.onNodeWithTag("suggested_nap_gap_marker").assertIsDisplayed()
+        composeRule.onNodeWithTag("suggested_nap_gap_marker").performClick()
+        composeRule.onNodeWithTag("smart_nap_adjuster_sheet").assertIsDisplayed()
+    }
 }

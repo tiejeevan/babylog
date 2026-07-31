@@ -2,6 +2,7 @@ package com.example.engine
 
 import android.content.Context
 import com.example.data.model.ActivityLog
+import com.example.data.model.ActivityTypes
 import com.example.data.model.BabyProfile
 import com.example.data.model.CareCheckSettings
 import com.example.data.model.MedicineAlarm
@@ -500,5 +501,23 @@ object ReminderEngine {
                 BabyNotificationManager.REQUEST_SNOOZE_MEDICINE_BASE + i
             )
         }
+    }
+
+    fun clearActiveCareAlarmsForActivity(context: Context, activityType: String) {
+        val app = context.applicationContext
+        val kind = when (activityType) {
+            ActivityTypes.BREASTFEEDING, ActivityTypes.BOTTLE ->
+                BabyNotificationManager.TYPE_FEED
+            ActivityTypes.DIAPER -> BabyNotificationManager.TYPE_DIAPER
+            ActivityTypes.SLEEP -> BabyNotificationManager.TYPE_SLEEP
+            else -> return
+        }
+        cancelCareDelivery(app, kind)
+        ActiveAlarmTracker.clear(app, ActiveAlarmTracker.kindKey(kind))
+        AlarmSoundController.stop()
+        BabyNotificationManager.cancelStickyReminder(
+            app,
+            BabyNotificationManager.notificationIdForType(kind)
+        )
     }
 }

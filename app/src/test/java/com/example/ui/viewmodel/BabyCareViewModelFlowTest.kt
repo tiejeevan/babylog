@@ -179,4 +179,35 @@ class BabyCareViewModelFlowTest {
         advanceUntilIdle()
         assertNull(viewModel.activeDuty.first { it == null })
     }
+
+    @Test
+    fun dismissAndRestoreSleepGapPrompt() = runTest {
+        val now = System.currentTimeMillis()
+        val sleepEnd = now - 4 * 3_600_000L
+        repository.insertLog(
+            com.example.data.model.ActivityLog(
+                activityType = ActivityTypes.SLEEP,
+                startTimeMillis = sleepEnd - 3_600_000L,
+                endTimeMillis = sleepEnd,
+                durationSeconds = 3600
+            )
+        )
+        advanceUntilIdle()
+
+        val prompt = viewModel.sleepGapPrompt.first { it != null }
+        assertNotNull(prompt)
+
+        viewModel.dismissSleepGapPrompt()
+        assertEquals(prompt!!.gapStartMillis, viewModel.dismissedSleepGapStartMillis.value)
+        assertTrue(viewModel.isSleepGapPromptDismissed())
+
+        viewModel.restoreSleepGapPrompt()
+        assertNull(viewModel.dismissedSleepGapStartMillis.value)
+        assertFalse(viewModel.isSleepGapPromptDismissed())
+
+        viewModel.openSmartNapAdjuster()
+        assertTrue(viewModel.showSmartNapAdjuster.value)
+        viewModel.closeSmartNapAdjuster()
+        assertFalse(viewModel.showSmartNapAdjuster.value)
+    }
 }

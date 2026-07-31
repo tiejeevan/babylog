@@ -53,6 +53,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -340,6 +341,13 @@ class BabyCareViewModel @JvmOverloads constructor(
         }
     }
 
+    /** gapStartMillis of the dismissed prompt; null if not dismissed. */
+    private val _dismissedSleepGapStartMillis = MutableStateFlow<Long?>(null)
+    val dismissedSleepGapStartMillis: StateFlow<Long?> = _dismissedSleepGapStartMillis.asStateFlow()
+
+    private val _showSmartNapAdjuster = MutableStateFlow(false)
+    val showSmartNapAdjuster: StateFlow<Boolean> = _showSmartNapAdjuster.asStateFlow()
+
     // Derived Intelligent AI Prediction
     val needPrediction: StateFlow<BabyNeedPrediction> = combine(
         babyProfile,
@@ -353,6 +361,52 @@ class BabyCareViewModel @JvmOverloads constructor(
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = BabyNeedPrediction("Analyzing Baby Status...", 90, "Evaluating logs", com.example.engine.UrgencyLevel.LOW_ALL_GOOD, "Check Dashboard", 0, ActivityTypes.BOTTLE)
     )
+
+    /** Unlogged awake-gap prompt for Smart Nap (null when no gap / ongoing activity). */
+    val sleepGapPrompt: StateFlow<SmartSleepGapPrompt?> = combine(
+        babyProfile,
+        recentLogs,
+        ongoingActivity,
+        currentTimeMillis
+    ) { profile, logs, ongoing, now ->
+        IntelligentNeedEngine.detectUnloggedSleepGap(profile, logs, ongoing, now)
+    }.onEach { prompt ->
+        val dismissed = _dismissedSleepGapStartMillis.value
+        if (prompt == null || (dismissed != null && dismissed != prompt.gapStartMillis)) {
+            _dismissedSleepGapStartMillis.value = null
+        }
+        if (prompt == null) {
+            _showSmartNapAdjuster.value = false
+        }
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = null
+    )
+
+    fun isSleepGapPromptDismissed(): Boolean {
+        val prompt = sleepGapPrompt.value ?: return false
+        return _dismissedSleepGapStartMillis.value == prompt.gapStartMillis
+    }
+
+    fun dismissSleepGapPrompt() {
+        val start = sleepGapPrompt.value?.gapStartMillis ?: return
+        _dismissedSleepGapStartMillis.value = start
+    }
+
+    fun restoreSleepGapPrompt() {
+        _dismissedSleepGapStartMillis.value = null
+    }
+
+    fun openSmartNapAdjuster() {
+        if (sleepGapPrompt.value != null) {
+            _showSmartNapAdjuster.value = true
+        }
+    }
+
+    fun closeSmartNapAdjuster() {
+        _showSmartNapAdjuster.value = false
+    }
 
     // Derived Today Summary
     val todaySummary: StateFlow<TodaySummary> = combine(
@@ -492,6 +546,7 @@ class BabyCareViewModel @JvmOverloads constructor(
             } else {
                 clearNursingSession()
             }
+            com.example.service.OngoingTimerService.start(getApplication())
             com.example.engine.BluetoothCareEngine.broadcastLogUpsert(saved)
             BabyCareWidgetProvider.updateAllWidgets(getApplication())
         }
@@ -551,6 +606,7 @@ class BabyCareViewModel @JvmOverloads constructor(
             )
             val saved = repository.updateLog(updated)
             clearNursingSession()
+            com.example.service.OngoingTimerService.resetState()
             com.example.engine.BluetoothCareEngine.broadcastLogUpsert(saved)
             BabyCareWidgetProvider.updateAllWidgets(getApplication())
             if (ReminderTiming.shouldRescheduleForActivity(saved.activityType)) {
@@ -1052,21 +1108,7 @@ class BabyCareViewModel @JvmOverloads constructor(
     }
 
     private fun clearActiveCareAlarmsForActivity(activityType: String) {
-        val app = getApplication<Application>()
-        val kind = when (activityType) {
-            ActivityTypes.BREASTFEEDING, ActivityTypes.BOTTLE ->
-                BabyNotificationManager.TYPE_FEED
-            ActivityTypes.DIAPER -> BabyNotificationManager.TYPE_DIAPER
-            ActivityTypes.SLEEP -> BabyNotificationManager.TYPE_SLEEP
-            else -> return
-        }
-        ReminderEngine.cancelCareDelivery(app, kind)
-        ActiveAlarmTracker.clear(app, ActiveAlarmTracker.kindKey(kind))
-        AlarmSoundController.stop()
-        BabyNotificationManager.cancelStickyReminder(
-            app,
-            BabyNotificationManager.notificationIdForType(kind)
-        )
+        ReminderEngine.clearActiveCareAlarmsForActivity(getApplication(), activityType)
     }
 
     private fun clearNursingSession() {

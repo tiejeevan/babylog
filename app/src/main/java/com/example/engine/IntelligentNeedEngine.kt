@@ -31,6 +31,12 @@ data class SmartSleepGapPrompt(
     val suggestedDurationsMinutes: List<Int> = listOf(30, 45, 60, 90)
 )
 
+/** Items for timeline list rendering, including optional Smart Nap gap markers. */
+sealed class TimelineDisplayItem {
+    data class Log(val log: ActivityLog) : TimelineDisplayItem()
+    data class SuggestedNapGap(val prompt: SmartSleepGapPrompt) : TimelineDisplayItem()
+}
+
 /**
  * Pure placement math for the interactive nap adjuster (unit-tested).
  */
@@ -428,6 +434,39 @@ object IntelligentNeedEngine {
             minutesSinceLastSleep = minutesSinceSleep,
             suggestedDurationsMinutes = listOf(30, 60, 90, 120, 180)
         )
+    }
+
+    /**
+     * Merges real activity logs (newest-first) with an optional Suggested Nap gap marker.
+     * Marker is shown only when [gapPrompt.gapEndMillis] falls within [rangeStartMillis, rangeEndMillis].
+     * Inserted immediately before the sleep log that ends the gap (visually between mid-gap
+     * activities and the preceding sleep).
+     */
+    fun buildTimelineWithGapMarker(
+        logs: List<ActivityLog>,
+        gapPrompt: SmartSleepGapPrompt?,
+        rangeStartMillis: Long,
+        rangeEndMillis: Long
+    ): List<TimelineDisplayItem> {
+        val logItems = logs.map { TimelineDisplayItem.Log(it) }
+        if (gapPrompt == null) return logItems
+        if (gapPrompt.gapEndMillis !in rangeStartMillis..rangeEndMillis) return logItems
+
+        val sleepIndex = logs.indexOfFirst { log ->
+            if (log.activityType != ActivityTypes.SLEEP) return@indexOfFirst false
+            val end = log.endTimeMillis ?: log.startTimeMillis
+            end <= gapPrompt.gapStartMillis
+        }
+
+        val marker = TimelineDisplayItem.SuggestedNapGap(gapPrompt)
+        if (sleepIndex < 0) {
+            return logItems + marker
+        }
+        return buildList(logItems.size + 1) {
+            addAll(logItems.subList(0, sleepIndex))
+            add(marker)
+            addAll(logItems.subList(sleepIndex, logItems.size))
+        }
     }
 
     private fun ActivityLog.toTimelineAnchor(): TimelineAnchor {

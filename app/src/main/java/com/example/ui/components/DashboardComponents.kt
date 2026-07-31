@@ -1496,3 +1496,140 @@ fun SmartSleepGapPromptCard(
     }
 }
 
+/**
+ * Subtle reminder shown after the full Smart Sleep gap card is dismissed.
+ * Tap restores the full [SmartSleepGapPromptCard].
+ */
+@Composable
+fun SuggestedNapCompactRow(
+    prompt: com.example.engine.SmartSleepGapPrompt,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .testTag("suggested_nap_compact_row"),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = SleepColor.copy(alpha = 0.08f)
+        ),
+        border = BorderStroke(1.dp, SleepColor.copy(alpha = 0.25f))
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Default.AutoAwesome,
+                contentDescription = null,
+                tint = SleepColor,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(modifier = Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Suggested nap",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = IntelligentNeedEngine.formatGapRange(
+                        prompt.gapStartMillis,
+                        prompt.gapEndMillis
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Icon(
+                imageVector = Icons.Default.ChevronRight,
+                contentDescription = "Re-open suggested nap",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+    }
+}
+
+/**
+ * Timeline list marker for an unresolved Smart Nap gap. Tap opens the adjuster.
+ */
+@Composable
+fun SuggestedNapGapMarkerCard(
+    prompt: com.example.engine.SmartSleepGapPrompt,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .testTag("suggested_nap_gap_marker"),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = SleepColor.copy(alpha = 0.15f)
+        ),
+        border = BorderStroke(
+            width = 1.5.dp,
+            color = SleepColor.copy(alpha = 0.45f)
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(SleepColor.copy(alpha = 0.25f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.NightlightRound,
+                    contentDescription = null,
+                    tint = SleepColor,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Suggested nap",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = IntelligentNeedEngine.formatGapRange(
+                        prompt.gapStartMillis,
+                        prompt.gapEndMillis
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = "Tap to log",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = SleepColor,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+            }
+            Icon(
+                imageVector = Icons.Default.ChevronRight,
+                contentDescription = "Log suggested nap",
+                tint = SleepColor,
+                modifier = Modifier.size(22.dp)
+            )
+        }
+    }
+}
+

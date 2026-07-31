@@ -54,7 +54,6 @@ import com.example.data.model.BabyProfile
 import com.example.engine.BluetoothCareEngine
 import com.example.engine.BluetoothConnectionState
 import com.example.engine.CustomLogRouter
-import com.example.engine.IntelligentNeedEngine
 import com.example.ui.components.ActivityLogCard
 import com.example.ui.components.BabyStatusBoard
 import com.example.ui.components.DashboardPatternHighlightCard
@@ -62,6 +61,7 @@ import com.example.ui.components.IntelligentNeedCard
 import com.example.ui.components.LiveActiveTimerCard
 import com.example.ui.components.QuickActionGrid
 import com.example.ui.components.SmartSleepGapPromptCard
+import com.example.ui.components.SuggestedNapCompactRow
 import com.example.ui.components.TodaySummaryBar
 import com.example.ui.components.TopBabyHeader
 import com.example.ui.dialogs.AddGrowthDialog
@@ -75,6 +75,7 @@ import com.example.ui.dialogs.LogSleepDialog
 import com.example.ui.dialogs.LogTemperatureDialog
 import com.example.ui.dialogs.NearbyCareSyncBottomSheet
 import com.example.ui.dialogs.OnboardingSetupDialog
+import com.example.ui.dialogs.SmartNapAdjusterHost
 import com.example.ui.viewmodel.BabyCareViewModel
 import kotlin.math.max
 
@@ -102,6 +103,8 @@ fun DashboardScreen(
     val activeNursingSide by viewModel.activeNursingSide.collectAsStateWithLifecycle()
     val nursingSideStartedAtMillis by viewModel.nursingSideStartedAtMillis.collectAsStateWithLifecycle()
     val dashboardPattern by viewModel.dashboardPatternHighlight.collectAsStateWithLifecycle()
+    val sleepGapPrompt by viewModel.sleepGapPrompt.collectAsStateWithLifecycle()
+    val dismissedSleepGapStart by viewModel.dismissedSleepGapStartMillis.collectAsStateWithLifecycle()
     val careSyncEnabled by BluetoothCareEngine.careSyncEnabled.collectAsStateWithLifecycle()
     val connectionState by BluetoothCareEngine.connectionState.collectAsStateWithLifecycle()
     val connectedDeviceName by BluetoothCareEngine.connectedDeviceName.collectAsStateWithLifecycle()
@@ -110,17 +113,14 @@ fun DashboardScreen(
         connectionState == BluetoothConnectionState.CONNECTED
 
     val context = LocalContext.current
+    val sleepGapDismissed = sleepGapPrompt != null &&
+        dismissedSleepGapStart == sleepGapPrompt?.gapStartMillis
 
     // Dialog state
     var activeActionDialog by remember { mutableStateOf<String?>(null) }
     var showSetupProfileDialog by remember { mutableStateOf(false) }
     var showNearbySyncSheet by remember { mutableStateOf(false) }
     var editingLog by remember { mutableStateOf<ActivityLog?>(null) }
-    var dismissedSleepPrompt by remember { mutableStateOf(false) }
-    var showNapAdjuster by remember { mutableStateOf(false) }
-    val sleepGapPrompt = remember(recentLogs, ongoingActivity, currentTimeMillis, profile) {
-        IntelligentNeedEngine.detectUnloggedSleepGap(profile, recentLogs, ongoingActivity, currentTimeMillis)
-    }
     var timelinePage by remember { mutableIntStateOf(0) }
     val timelinePageSize = 10
     val timelinePageCount = max(1, (recentLogs.size + timelinePageSize - 1) / timelinePageSize)
@@ -400,6 +400,13 @@ fun DashboardScreen(
                                     ActivityTypes.TUMMY_TIME, ActivityTypes.PUMPING -> {
                                         viewModel.startLiveActivity(activityType = type)
                                     }
+                                    ActivityTypes.SLEEP -> {
+                                        if (sleepGapPrompt != null) {
+                                            viewModel.openSmartNapAdjuster()
+                                        } else {
+                                            activeActionDialog = type
+                                        }
+                                    }
                                     else -> {
                                         activeActionDialog = type
                                     }
@@ -408,34 +415,41 @@ fun DashboardScreen(
                         )
                     }
 
-                    if (sleepGapPrompt != null && !dismissedSleepPrompt) {
+                    if (sleepGapPrompt != null && !sleepGapDismissed) {
                         Spacer(modifier = Modifier.height(12.dp))
                         SmartSleepGapPromptCard(
-                            prompt = sleepGapPrompt,
+                            prompt = sleepGapPrompt!!,
                             babyName = profile?.name ?: "Baby",
                             onQuickLogNap = { durMin ->
+                                val prompt = sleepGapPrompt!!
                                 val placement = com.example.engine.NapPlacementState(
-                                    gapStartMillis = sleepGapPrompt.gapStartMillis,
-                                    gapEndMillis = sleepGapPrompt.gapEndMillis,
-                                    napStartMillis = sleepGapPrompt.defaultNapStartMillis,
-                                    napEndMillis = sleepGapPrompt.defaultNapStartMillis +
-                                        sleepGapPrompt.defaultNapDurationMinutes * 60_000L,
-                                    intermediateActivities = sleepGapPrompt.intermediateActivities
+                                    gapStartMillis = prompt.gapStartMillis,
+                                    gapEndMillis = prompt.gapEndMillis,
+                                    napStartMillis = prompt.defaultNapStartMillis,
+                                    napEndMillis = prompt.defaultNapStartMillis +
+                                        prompt.defaultNapDurationMinutes * 60_000L,
+                                    intermediateActivities = prompt.intermediateActivities
                                 ).withCenteredDuration(durMin)
                                 viewModel.logIntelligentNap(
                                     startTimeMillis = placement.napStartMillis,
                                     endTimeMillis = placement.napEndMillis,
-                                    gapPrompt = sleepGapPrompt
+                                    gapPrompt = prompt
                                 )
-                                dismissedSleepPrompt = true
+                                viewModel.dismissSleepGapPrompt()
                                 Toast.makeText(
                                     context,
                                     "Logged ${placement.durationMinutes}m intelligent nap 💤",
                                     Toast.LENGTH_SHORT
                                 ).show()
                             },
-                            onAdjustTimeline = { showNapAdjuster = true },
-                            onDismiss = { dismissedSleepPrompt = true }
+                            onAdjustTimeline = { viewModel.openSmartNapAdjuster() },
+                            onDismiss = { viewModel.dismissSleepGapPrompt() }
+                        )
+                    } else if (sleepGapPrompt != null && sleepGapDismissed) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        SuggestedNapCompactRow(
+                            prompt = sleepGapPrompt!!,
+                            onClick = { viewModel.restoreSleepGapPrompt() }
                         )
                     }
                 }
@@ -670,21 +684,8 @@ fun DashboardScreen(
         )
     }
 
-    if (showNapAdjuster && sleepGapPrompt != null) {
-        com.example.ui.dialogs.SmartNapAdjusterSheet(
-            prompt = sleepGapPrompt,
-            babyName = profile?.name ?: "Baby",
-            onConfirm = { start, end ->
-                viewModel.logIntelligentNap(
-                    startTimeMillis = start,
-                    endTimeMillis = end,
-                    gapPrompt = sleepGapPrompt
-                )
-                showNapAdjuster = false
-                dismissedSleepPrompt = true
-                Toast.makeText(context, "Logged intelligent nap 💤", Toast.LENGTH_SHORT).show()
-            },
-            onDismiss = { showNapAdjuster = false }
-        )
-    }
+    SmartNapAdjusterHost(
+        viewModel = viewModel,
+        babyName = profile?.name ?: "Baby"
+    )
 }

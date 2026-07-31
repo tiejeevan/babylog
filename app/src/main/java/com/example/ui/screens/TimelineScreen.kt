@@ -45,8 +45,12 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.model.ActivityLog
 import com.example.data.model.ActivityTypes
+import com.example.engine.IntelligentNeedEngine
+import com.example.engine.TimelineDisplayItem
 import com.example.ui.components.ActivityLogCard
+import com.example.ui.components.SuggestedNapGapMarkerCard
 import com.example.ui.dialogs.EditActivityLogDialog
+import com.example.ui.dialogs.SmartNapAdjusterHost
 import com.example.ui.viewmodel.BabyCareViewModel
 import com.example.ui.viewmodel.TimelineRangeMode
 import java.text.SimpleDateFormat
@@ -59,6 +63,7 @@ fun TimelineScreen(viewModel: BabyCareViewModel) {
     val profile by viewModel.babyProfile.collectAsStateWithLifecycle()
     val mode by viewModel.timelineMode.collectAsStateWithLifecycle()
     val range by viewModel.timelineRange.collectAsStateWithLifecycle()
+    val sleepGapPrompt by viewModel.sleepGapPrompt.collectAsStateWithLifecycle()
 
     var searchQuery by remember { mutableStateOf("") }
     var selectedFilter by remember { mutableStateOf("All") }
@@ -86,9 +91,20 @@ fun TimelineScreen(viewModel: BabyCareViewModel) {
         matchesFilter && matchesSearch
     }
 
-    val weekSections = remember(filteredLogs, mode) {
+    val showGapMarker = selectedFilter == "All" || selectedFilter == "Sleep"
+    val displayItems = remember(filteredLogs, sleepGapPrompt, range, showGapMarker, searchQuery) {
+        val gapForList = if (showGapMarker && searchQuery.isBlank()) sleepGapPrompt else null
+        IntelligentNeedEngine.buildTimelineWithGapMarker(
+            logs = filteredLogs,
+            gapPrompt = gapForList,
+            rangeStartMillis = range.first,
+            rangeEndMillis = range.second
+        )
+    }
+
+    val weekSections = remember(displayItems, mode) {
         if (mode != TimelineRangeMode.WEEK) emptyList()
-        else groupLogsByDay(filteredLogs)
+        else groupDisplayItemsByDay(displayItems)
     }
 
     LazyColumn(
@@ -224,7 +240,7 @@ fun TimelineScreen(viewModel: BabyCareViewModel) {
             }
         }
 
-        if (filteredLogs.isEmpty()) {
+        if (displayItems.isEmpty()) {
             item {
                 Spacer(modifier = Modifier.height(32.dp))
                 Text(
@@ -244,20 +260,40 @@ fun TimelineScreen(viewModel: BabyCareViewModel) {
                         modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
                     )
                 }
-                items(section.logs, key = { it.id }) { log ->
-                    ActivityLogCard(
-                        log = log,
-                        onEditClick = { editingLog = log },
-                        onDeleteClick = { pendingDeleteLog = log }
+                items(
+                    section.items,
+                    key = { item ->
+                        when (item) {
+                            is TimelineDisplayItem.Log -> "log_${item.log.id}"
+                            is TimelineDisplayItem.SuggestedNapGap ->
+                                "gap_${item.prompt.gapStartMillis}"
+                        }
+                    }
+                ) { item ->
+                    TimelineDisplayItemRow(
+                        item = item,
+                        onEditLog = { editingLog = it },
+                        onDeleteLog = { pendingDeleteLog = it },
+                        onGapClick = { viewModel.openSmartNapAdjuster() }
                     )
                 }
             }
         } else {
-            items(filteredLogs, key = { it.id }) { log ->
-                ActivityLogCard(
-                    log = log,
-                    onEditClick = { editingLog = log },
-                    onDeleteClick = { pendingDeleteLog = log }
+            items(
+                displayItems,
+                key = { item ->
+                    when (item) {
+                        is TimelineDisplayItem.Log -> "log_${item.log.id}"
+                        is TimelineDisplayItem.SuggestedNapGap ->
+                            "gap_${item.prompt.gapStartMillis}"
+                    }
+                }
+            ) { item ->
+                TimelineDisplayItemRow(
+                    item = item,
+                    onEditLog = { editingLog = it },
+                    onDeleteLog = { pendingDeleteLog = it },
+                    onGapClick = { viewModel.openSmartNapAdjuster() }
                 )
             }
         }
@@ -355,24 +391,59 @@ fun TimelineScreen(viewModel: BabyCareViewModel) {
             }
         )
     }
+
+    SmartNapAdjusterHost(
+        viewModel = viewModel,
+        babyName = profile?.name ?: "Baby"
+    )
+}
+
+@Composable
+private fun TimelineDisplayItemRow(
+    item: TimelineDisplayItem,
+    onEditLog: (ActivityLog) -> Unit,
+    onDeleteLog: (ActivityLog) -> Unit,
+    onGapClick: () -> Unit
+) {
+    when (item) {
+        is TimelineDisplayItem.Log -> {
+            ActivityLogCard(
+                log = item.log,
+                onEditClick = { onEditLog(item.log) },
+                onDeleteClick = { onDeleteLog(item.log) }
+            )
+        }
+        is TimelineDisplayItem.SuggestedNapGap -> {
+            SuggestedNapGapMarkerCard(
+                prompt = item.prompt,
+                onClick = onGapClick
+            )
+        }
+    }
 }
 
 private data class DaySection(
     val dayStartMillis: Long,
     val label: String,
-    val logs: List<ActivityLog>
+    val items: List<TimelineDisplayItem>
 )
 
-private fun groupLogsByDay(logs: List<ActivityLog>): List<DaySection> {
+private fun groupDisplayItemsByDay(items: List<TimelineDisplayItem>): List<DaySection> {
     val dayFormat = SimpleDateFormat("EEE, MMM d", Locale.getDefault())
-    return logs
-        .groupBy { BabyCareViewModel.startOfDayMillis(it.startTimeMillis) }
+    return items
+        .groupBy { item ->
+            val millis = when (item) {
+                is TimelineDisplayItem.Log -> item.log.startTimeMillis
+                is TimelineDisplayItem.SuggestedNapGap -> item.prompt.gapStartMillis
+            }
+            BabyCareViewModel.startOfDayMillis(millis)
+        }
         .toSortedMap(compareByDescending { it })
-        .map { (dayStart, dayLogs) ->
+        .map { (dayStart, dayItems) ->
             DaySection(
                 dayStartMillis = dayStart,
                 label = dayFormat.format(Date(dayStart)),
-                logs = dayLogs
+                items = dayItems
             )
         }
 }

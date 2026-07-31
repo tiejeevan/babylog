@@ -130,6 +130,117 @@ class IntelligentNeedEngineTest {
     }
 
     @Test
+    fun buildTimelineWithGapMarkerInsertsBeforePrecedingSleep() {
+        val gapStart = 5_000_000L
+        val gapEnd = gapStart + TimeUnit.HOURS.toMillis(4)
+        val sleep = ActivityLog(
+            id = 1,
+            activityType = ActivityTypes.SLEEP,
+            startTimeMillis = gapStart - TimeUnit.HOURS.toMillis(1),
+            endTimeMillis = gapStart
+        )
+        val bottle = ActivityLog(
+            id = 2,
+            activityType = ActivityTypes.BOTTLE,
+            startTimeMillis = gapStart + TimeUnit.HOURS.toMillis(1),
+            endTimeMillis = gapStart + TimeUnit.HOURS.toMillis(1) + 10 * 60_000L,
+            volumeMl = 100
+        )
+        // Newest-first (DESC)
+        val logs = listOf(bottle, sleep)
+        val prompt = SmartSleepGapPrompt(
+            gapStartMillis = gapStart,
+            gapEndMillis = gapEnd,
+            prevActivity = null,
+            nextActivity = null,
+            intermediateActivities = emptyList(),
+            defaultNapStartMillis = gapStart + 60 * 60_000L,
+            defaultNapDurationMinutes = 45,
+            minutesSinceLastSleep = 240
+        )
+
+        val items = IntelligentNeedEngine.buildTimelineWithGapMarker(
+            logs = logs,
+            gapPrompt = prompt,
+            rangeStartMillis = gapStart - TimeUnit.HOURS.toMillis(2),
+            rangeEndMillis = gapEnd
+        )
+
+        assertEquals(3, items.size)
+        assertTrue(items[0] is TimelineDisplayItem.Log)
+        assertEquals(2L, (items[0] as TimelineDisplayItem.Log).log.id)
+        assertTrue(items[1] is TimelineDisplayItem.SuggestedNapGap)
+        assertTrue(items[2] is TimelineDisplayItem.Log)
+        assertEquals(1L, (items[2] as TimelineDisplayItem.Log).log.id)
+    }
+
+    @Test
+    fun buildTimelineWithGapMarkerAppendsWhenNoPrecedingSleep() {
+        val gapStart = 5_000_000L
+        val gapEnd = gapStart + TimeUnit.HOURS.toMillis(4)
+        val bottle = ActivityLog(
+            id = 2,
+            activityType = ActivityTypes.BOTTLE,
+            startTimeMillis = gapStart + TimeUnit.HOURS.toMillis(1),
+            endTimeMillis = gapStart + TimeUnit.HOURS.toMillis(1) + 10 * 60_000L,
+            volumeMl = 100
+        )
+        val prompt = SmartSleepGapPrompt(
+            gapStartMillis = gapStart,
+            gapEndMillis = gapEnd,
+            prevActivity = null,
+            nextActivity = null,
+            intermediateActivities = emptyList(),
+            defaultNapStartMillis = gapStart + 60 * 60_000L,
+            defaultNapDurationMinutes = 45,
+            minutesSinceLastSleep = 240
+        )
+
+        val items = IntelligentNeedEngine.buildTimelineWithGapMarker(
+            logs = listOf(bottle),
+            gapPrompt = prompt,
+            rangeStartMillis = gapStart,
+            rangeEndMillis = gapEnd
+        )
+
+        assertEquals(2, items.size)
+        assertTrue(items[0] is TimelineDisplayItem.Log)
+        assertTrue(items[1] is TimelineDisplayItem.SuggestedNapGap)
+    }
+
+    @Test
+    fun buildTimelineWithGapMarkerOmitsWhenGapOutsideRange() {
+        val gapStart = 5_000_000L
+        val gapEnd = gapStart + TimeUnit.HOURS.toMillis(4)
+        val sleep = ActivityLog(
+            id = 1,
+            activityType = ActivityTypes.SLEEP,
+            startTimeMillis = gapStart - TimeUnit.HOURS.toMillis(1),
+            endTimeMillis = gapStart
+        )
+        val prompt = SmartSleepGapPrompt(
+            gapStartMillis = gapStart,
+            gapEndMillis = gapEnd,
+            prevActivity = null,
+            nextActivity = null,
+            intermediateActivities = emptyList(),
+            defaultNapStartMillis = gapStart + 60 * 60_000L,
+            defaultNapDurationMinutes = 45,
+            minutesSinceLastSleep = 240
+        )
+
+        val items = IntelligentNeedEngine.buildTimelineWithGapMarker(
+            logs = listOf(sleep),
+            gapPrompt = prompt,
+            rangeStartMillis = 0L,
+            rangeEndMillis = gapStart // gapEnd is outside
+        )
+
+        assertEquals(1, items.size)
+        assertTrue(items[0] is TimelineDisplayItem.Log)
+    }
+
+    @Test
     fun parseIntelligentGapPopoverExtractsRange() {
         val notes = "Smart nap (57m) · Gap: 1:30 PM–4:30 PM (3h)"
         val text = IntelligentNeedEngine.parseIntelligentGapPopover(notes)

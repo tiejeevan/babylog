@@ -39,6 +39,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
     <!-- DSP Sound Trigger (granted only on priv-app + allowlist install) -->
     <uses-permission android:name="android.permission.CAPTURE_AUDIO_HOTWORD" />
@@ -134,6 +136,39 @@
             android:name=".service.BabyCareVoiceInteractionSessionService"
             android:exported="true"
             android:permission="android.permission.BIND_VOICE_INTERACTION" />
+
+        <service
+            android:name=".service.OngoingTimerService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse|dataSync"
+            tools:targetApi="34">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Interactive live ongoing baby care timer for feeding and sleep" />
+        </service>
+
+        <service
+            android:name=".service.QuickLogTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_shortcut_feed"
+            android:label="Quick Care Log"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <receiver
+            android:name=".notification.TimerNotificationReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.example.ACTION_PAUSE_TIMER" />
+                <action android:name="com.example.ACTION_RESUME_TIMER" />
+                <action android:name="com.example.ACTION_SWITCH_SIDE" />
+                <action android:name="com.example.ACTION_STOP_TIMER" />
+            </intent-filter>
+        </receiver>
 
         <receiver
             android:name=".notification.BabyAlarmReceiver"

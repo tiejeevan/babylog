@@ -1,5 +1,6 @@
 package com.example.notification
 
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -8,12 +9,16 @@ import android.content.Intent
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import com.example.MainActivity
+import com.example.R
+import com.example.data.model.ActivityLog
+import com.example.data.model.ActivityTypes
 import com.example.data.model.CareCheckSettings
 import com.example.engine.ReminderKind
 
 object BabyNotificationManager {
 
     const val CHANNEL_TIMERS = "channel_timers"
+    const val CHANNEL_ONGOING_TIMERS = "channel_ongoing_timers"
     const val CHANNEL_REMINDERS = "channel_reminders"
     const val CHANNEL_HEALTH = "channel_health"
     /** Dedicated phone-alarm channel (USAGE_ALARM sound, bypass DND). */
@@ -25,6 +30,17 @@ object BabyNotificationManager {
     const val EXTRA_OPEN_VOICE_COMMANDS = "open_voice_commands"
     const val NOTIFICATION_ID_PEER_CHAT = 4300
     const val NOTIFICATION_ID_VOICE_CONFIRM = 4301
+    const val NOTIFICATION_ID_ONGOING_TIMER = 2199
+
+    const val ACTION_PAUSE_TIMER = "com.example.ACTION_PAUSE_TIMER"
+    const val ACTION_RESUME_TIMER = "com.example.ACTION_RESUME_TIMER"
+    const val ACTION_SWITCH_SIDE = "com.example.ACTION_SWITCH_SIDE"
+    const val ACTION_STOP_TIMER = "com.example.ACTION_STOP_TIMER"
+
+    const val REQUEST_PAUSE_TIMER = 2195
+    const val REQUEST_RESUME_TIMER = 2196
+    const val REQUEST_SWITCH_SIDE = 2197
+    const val REQUEST_STOP_TIMER = 2198
 
     private data class PeerChatLine(
         val senderName: String,
@@ -224,13 +240,140 @@ object BabyNotificationManager {
                 enableVibration(true)
             }
 
+            val ongoingTimerChannel = NotificationChannel(
+                CHANNEL_ONGOING_TIMERS,
+                "Active Ongoing Timers",
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "Live ongoing timers for feeding, sleep, and pumping"
+                enableVibration(false)
+                setSound(null, null)
+            }
+
             notificationManager.createNotificationChannel(timerChannel)
+            notificationManager.createNotificationChannel(ongoingTimerChannel)
             notificationManager.createNotificationChannel(reminderChannel)
             notificationManager.createNotificationChannel(healthChannel)
             notificationManager.createNotificationChannel(phoneAlarmChannel)
             notificationManager.createNotificationChannel(messagesChannel)
             notificationManager.createNotificationChannel(voiceChannel)
         }
+    }
+
+    fun buildOngoingTimerNotification(
+        context: Context,
+        ongoingLog: ActivityLog,
+        isPaused: Boolean = false,
+        activeNursingSide: String = "LEFT",
+        elapsedLeftSec: Long = 0,
+        elapsedRightSec: Long = 0
+    ): Notification {
+        val launchIntent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val contentPendingIntent = PendingIntent.getActivity(
+            context,
+            0,
+            launchIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val isNursing = ongoingLog.activityType == ActivityTypes.BREASTFEEDING
+        val title = when (ongoingLog.activityType) {
+            ActivityTypes.BREASTFEEDING -> "🤱 Ongoing Nursing Session"
+            ActivityTypes.SLEEP -> "😴 Baby Sleeping..."
+            ActivityTypes.PUMPING -> "🍼 Pumping Session"
+            else -> "⏱️ Active ${ongoingLog.activityType}"
+        }
+
+        val subtext = if (isNursing) {
+            val sideText = if (activeNursingSide == "RIGHT") "Right Side" else "Left Side"
+            "Active: $sideText • Left: ${elapsedLeftSec / 60}m, Right: ${elapsedRightSec / 60}m"
+        } else {
+            "Caregiver: ${ongoingLog.caregiverName}"
+        }
+
+        val builder = NotificationCompat.Builder(context, CHANNEL_ONGOING_TIMERS)
+            .setContentTitle(title)
+            .setContentText(if (isPaused) "⏸️ Paused • $subtext" else subtext)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentIntent(contentPendingIntent)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setUsesChronometer(!isPaused)
+            .setWhen(ongoingLog.startTimeMillis)
+            .setShowWhen(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+
+        // 1. Pause / Resume action
+        if (isPaused) {
+            val resumeIntent = Intent(context, TimerNotificationReceiver::class.java).apply {
+                action = ACTION_RESUME_TIMER
+            }
+            val resumePendingIntent = PendingIntent.getBroadcast(
+                context,
+                REQUEST_RESUME_TIMER,
+                resumeIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            builder.addAction(
+                android.R.drawable.ic_media_play,
+                "Resume",
+                resumePendingIntent
+            )
+        } else {
+            val pauseIntent = Intent(context, TimerNotificationReceiver::class.java).apply {
+                action = ACTION_PAUSE_TIMER
+            }
+            val pausePendingIntent = PendingIntent.getBroadcast(
+                context,
+                REQUEST_PAUSE_TIMER,
+                pauseIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            builder.addAction(
+                android.R.drawable.ic_media_pause,
+                "Pause",
+                pausePendingIntent
+            )
+        }
+
+        // 2. Switch Side action (Nursing only)
+        if (isNursing) {
+            val switchSideIntent = Intent(context, TimerNotificationReceiver::class.java).apply {
+                action = ACTION_SWITCH_SIDE
+            }
+            val switchSidePendingIntent = PendingIntent.getBroadcast(
+                context,
+                REQUEST_SWITCH_SIDE,
+                switchSideIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            val nextSideLabel = if (activeNursingSide == "RIGHT") "Switch to Left" else "Switch to Right"
+            builder.addAction(
+                android.R.drawable.ic_menu_rotate,
+                nextSideLabel,
+                switchSidePendingIntent
+            )
+        }
+
+        // 3. Stop & Save action
+        val stopIntent = Intent(context, TimerNotificationReceiver::class.java).apply {
+            action = ACTION_STOP_TIMER
+        }
+        val stopPendingIntent = PendingIntent.getBroadcast(
+            context,
+            REQUEST_STOP_TIMER,
+            stopIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        builder.addAction(
+            android.R.drawable.ic_menu_close_clear_cancel,
+            "Stop & Save",
+            stopPendingIntent
+        )
+
+        return builder.build()
     }
 
     fun showVoiceCommandConfirmation(

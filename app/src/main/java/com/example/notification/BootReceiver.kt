@@ -35,6 +35,10 @@ class BootReceiver : BroadcastReceiver() {
                 val appContext = context.applicationContext
                 val dao = BabyCareDatabase.getDatabase(appContext).babyCareDao()
                 val repository = BabyCareRepository(dao)
+                val ongoing = repository.getOngoingActivityDirect()
+                if (ongoing != null) {
+                    com.example.service.OngoingTimerService.start(appContext)
+                }
                 ReminderEngine.rescheduleAll(appContext, repository)
             } finally {
                 pendingResult.finish()

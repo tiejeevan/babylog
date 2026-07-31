@@ -42,6 +42,10 @@ class BabyCareApplication : Application() {
         CoroutineScope(Dispatchers.IO).launch {
             val dao = BabyCareDatabase.getDatabase(this@BabyCareApplication).babyCareDao()
             val repository = BabyCareRepository(dao)
+            val ongoing = repository.getOngoingActivityDirect()
+            if (ongoing != null) {
+                com.example.service.OngoingTimerService.start(this@BabyCareApplication)
+            }
             ReminderEngine.rescheduleAll(this@BabyCareApplication, repository)
         }
     }
