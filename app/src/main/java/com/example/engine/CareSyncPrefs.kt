@@ -12,6 +12,11 @@ object CareSyncPrefs {
     private const val KEY_VIBRATE_ON_RECEIVE = "vibrate_on_receive"
     private const val DEFAULT_PIN = "1234"
 
+    private const val KEY_CAREGIVER_NAME = "caregiver_name"
+    private const val KEY_CAREGIVER_ROLE = "caregiver_role"
+    private const val KEY_FORGOTTEN_DEVICES = "forgotten_devices"
+    private const val KEY_REMEMBERED_DEVICES = "remembered_devices"
+
     private fun prefs(context: Context): SharedPreferences =
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
@@ -49,5 +54,50 @@ object CareSyncPrefs {
         val id = java.util.UUID.randomUUID().toString()
         prefs(context).edit().putString(KEY_DEVICE_ID, id).apply()
         return id
+    }
+
+    fun getCaregiverName(context: Context, defaultName: String = "Parent"): String =
+        prefs(context).getString(KEY_CAREGIVER_NAME, defaultName) ?: defaultName
+
+    fun setCaregiverName(context: Context, name: String) {
+        prefs(context).edit().putString(KEY_CAREGIVER_NAME, name.trim().ifBlank { "Parent" }).apply()
+    }
+
+    fun getCaregiverRole(context: Context, defaultRole: String = "Primary Caregiver"): String =
+        prefs(context).getString(KEY_CAREGIVER_ROLE, defaultRole) ?: defaultRole
+
+    fun setCaregiverRole(context: Context, role: String) {
+        prefs(context).edit().putString(KEY_CAREGIVER_ROLE, role.trim()).apply()
+    }
+
+    fun getForgottenDevices(context: Context): Set<String> =
+        prefs(context).getStringSet(KEY_FORGOTTEN_DEVICES, emptySet()) ?: emptySet()
+
+    fun addForgottenDevice(context: Context, deviceIdOrName: String) {
+        val current = getForgottenDevices(context).toMutableSet()
+        current.add(deviceIdOrName)
+        prefs(context).edit().putStringSet(KEY_FORGOTTEN_DEVICES, current).apply()
+    }
+
+    fun removeForgottenDevice(context: Context, deviceIdOrName: String) {
+        val current = getForgottenDevices(context).toMutableSet()
+        current.remove(deviceIdOrName)
+        prefs(context).edit().putStringSet(KEY_FORGOTTEN_DEVICES, current).apply()
+    }
+
+    fun getRememberedDevices(context: Context): Set<String> =
+        prefs(context).getStringSet(KEY_REMEMBERED_DEVICES, emptySet()) ?: emptySet()
+
+    fun addRememberedDevice(context: Context, deviceIdOrName: String) {
+        if (deviceIdOrName.isBlank()) return
+        val current = getRememberedDevices(context).toMutableSet()
+        current.add(deviceIdOrName)
+        prefs(context).edit().putStringSet(KEY_REMEMBERED_DEVICES, current).apply()
+    }
+
+    fun removeRememberedDevice(context: Context, deviceIdOrName: String) {
+        val current = getRememberedDevices(context).toMutableSet()
+        current.remove(deviceIdOrName)
+        prefs(context).edit().putStringSet(KEY_REMEMBERED_DEVICES, current).apply()
     }
 }

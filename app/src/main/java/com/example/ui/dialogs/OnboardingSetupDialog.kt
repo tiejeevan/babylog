@@ -44,6 +44,8 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import com.example.data.model.BabyBirthDefaults
 import com.example.data.model.BabyProfile
+import com.example.engine.BluetoothCareEngine
+import com.example.engine.CareSyncPrefs
 import com.example.ui.theme.Dimens
 import java.text.SimpleDateFormat
 import java.util.*
@@ -89,8 +91,16 @@ fun OnboardingSetupDialog(
         }
     }
 
-    var caregiverRole by remember { mutableStateOf(initialProfile?.primaryCaregiverRole ?: "Mom") }
-    var caregiverName by remember { mutableStateOf(initialProfile?.primaryCaregiverName ?: "Mom") }
+    var caregiverRole by remember {
+        mutableStateOf(
+            BluetoothCareEngine.getMyCaregiverRole(context).ifBlank { initialProfile?.primaryCaregiverRole ?: "Mom" }
+        )
+    }
+    var caregiverName by remember {
+        mutableStateOf(
+            BluetoothCareEngine.getMyCaregiverName(context).ifBlank { initialProfile?.primaryCaregiverName ?: "Mom" }
+        )
+    }
 
     var babyNameText by remember {
         mutableStateOf(
@@ -317,6 +327,9 @@ fun OnboardingSetupDialog(
 
                     Button(
                         onClick = {
+                            BluetoothCareEngine.setMyCaregiverName(context, caregiverName.ifBlank { caregiverRole })
+                            BluetoothCareEngine.setMyCaregiverRole(context, caregiverRole)
+
                             if (currentStep < 2) {
                                 currentStep++
                             } else {
@@ -804,6 +817,84 @@ private fun StepBabyDetailsContent(
 
         Spacer(modifier = Modifier.height(16.dp))
 
+        // Routine Targets (Always Visible)
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+        ) {
+            Column(modifier = Modifier.padding(14.dp)) {
+                Text(
+                    text = "Routine Targets & Goals ⏱️",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = "Target feeding intervals and wake window targets drive smart need predictions and alerts.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    OutlinedTextField(
+                        value = feedIntervalHoursText,
+                        onValueChange = onFeedIntervalChanged,
+                        label = { Text("Feed Goal (hrs)") },
+                        supportingText = { Text("${((feedIntervalHoursText.toDoubleOrNull() ?: 3.0) * 60).toInt()} mins") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("feed_goal_input"),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+
+                    OutlinedTextField(
+                        value = napIntervalHoursText,
+                        onValueChange = onNapIntervalChanged,
+                        label = { Text("Wake Window (hrs)") },
+                        supportingText = { Text("${((napIntervalHoursText.toDoubleOrNull() ?: 2.5) * 60).toInt()} mins") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("wake_window_input"),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                Text(
+                    text = "Quick Presets:",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    listOf("2.0", "2.5", "3.0", "3.5", "4.0").forEach { preset ->
+                        FilterChip(
+                            selected = feedIntervalHoursText == preset,
+                            onClick = { onFeedIntervalChanged(preset) },
+                            label = { Text("${preset}h", fontSize = 11.sp) },
+                            modifier = Modifier.heightIn(min = 32.dp)
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
         TextButton(
             onClick = { showMoreDetails = !showMoreDetails },
             modifier = Modifier.testTag("more_baby_details_btn")
@@ -814,7 +905,7 @@ private fun StepBabyDetailsContent(
             )
             Spacer(modifier = Modifier.width(4.dp))
             Text(
-                text = if (showMoreDetails) "Hide optional details" else "More details (optional)",
+                text = if (showMoreDetails) "Hide birth measurements" else "Birth weight & length (optional)",
                 fontWeight = FontWeight.SemiBold
             )
         }
@@ -847,37 +938,6 @@ private fun StepBabyDetailsContent(
                         modifier = Modifier
                             .weight(1f)
                             .testTag("baby_height_input"),
-                        shape = RoundedCornerShape(12.dp)
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    OutlinedTextField(
-                        value = feedIntervalHoursText,
-                        onValueChange = onFeedIntervalChanged,
-                        label = { Text("Feed goal (hrs)") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        singleLine = true,
-                        modifier = Modifier
-                            .weight(1f)
-                            .testTag("feed_goal_input"),
-                        shape = RoundedCornerShape(12.dp)
-                    )
-
-                    OutlinedTextField(
-                        value = napIntervalHoursText,
-                        onValueChange = onNapIntervalChanged,
-                        label = { Text("Wake window (hrs)") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        singleLine = true,
-                        modifier = Modifier
-                            .weight(1f)
-                            .testTag("wake_window_input"),
                         shape = RoundedCornerShape(12.dp)
                     )
                 }

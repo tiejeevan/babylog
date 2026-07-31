@@ -340,10 +340,6 @@ fun MainScreen(
                     NavDestination.DASHBOARD -> DashboardScreen(
                         viewModel = viewModel,
                         onNavigateToTimeline = { currentDestination = NavDestination.TIMELINE },
-                        onNavigateToFamily = {
-                            moreDestination = MoreDestination.FAMILY
-                            currentDestination = NavDestination.MORE
-                        },
                         onNavigateToInsights = { currentDestination = NavDestination.AI_INSIGHTS },
                         onNavigateToSleepSound = { isShowingSleepSoundScreen = true },
                         onNavigateToBluetooth = { isShowingBluetoothScreen = true },

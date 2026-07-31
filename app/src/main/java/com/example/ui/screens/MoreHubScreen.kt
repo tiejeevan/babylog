@@ -43,14 +43,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.ui.viewmodel.BabyCareViewModel
 
+import androidx.compose.material.icons.filled.Settings
+
 enum class MoreDestination {
     HUB,
     CALENDAR,
     MEMORIES,
     NOTES_LISTS,
     REMINDERS,
-    FAMILY,
-    VOICE_COMMANDS
+    VOICE_COMMANDS,
+    SYSTEM_SETTINGS
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -88,29 +90,11 @@ fun MoreHubScreen(
             viewModel = viewModel,
             onNavigateBack = { onDestinationChange(MoreDestination.HUB) }
         )
-        MoreDestination.FAMILY -> Scaffold(
-            topBar = {
-                TopAppBar(
-                    title = { Text("Family & Care Sync") },
-                    actions = {
-                        IconButton(
-                            onClick = { onDestinationChange(MoreDestination.HUB) },
-                            modifier = Modifier.testTag("family_dismiss")
-                        ) {
-                            Icon(Icons.Default.Close, contentDescription = "Dismiss")
-                        }
-                    }
-                )
-            }
-        ) { padding ->
-            Column(modifier = Modifier.padding(padding)) {
-                FamilyCaregiversScreen(
-                    viewModel = viewModel,
-                    onNavigateToBluetooth = onNavigateToBluetooth
-                )
-            }
-        }
         MoreDestination.VOICE_COMMANDS -> VoiceCommandsScreen(
+            onNavigateBack = { onDestinationChange(MoreDestination.HUB) }
+        )
+        MoreDestination.SYSTEM_SETTINGS -> SystemSettingsScreen(
+            viewModel = viewModel,
             onNavigateBack = { onDestinationChange(MoreDestination.HUB) }
         )
     }
@@ -196,12 +180,13 @@ private fun MoreHubHome(
             testTag = "more_voice_commands",
             onClick = { onOpen(MoreDestination.VOICE_COMMANDS) }
         )
+
         MoreHubTile(
-            title = "Family & Care Sync",
-            subtitle = "Caregivers, PIN, duty handoff",
-            icon = Icons.Default.People,
-            testTag = "more_family",
-            onClick = { onOpen(MoreDestination.FAMILY) }
+            title = "System Settings",
+            subtitle = "Widget diagnostics, backups & data management",
+            icon = Icons.Default.Settings,
+            testTag = "more_system_settings",
+            onClick = { onOpen(MoreDestination.SYSTEM_SETTINGS) }
         )
 
         Spacer(modifier = Modifier.height(12.dp))
@@ -212,13 +197,7 @@ private fun MoreHubHome(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(vertical = 8.dp)
         )
-        MoreHubTile(
-            title = "Care Sync",
-            subtitle = "Connect nearby family phones",
-            icon = Icons.Default.Bluetooth,
-            testTag = "more_bluetooth",
-            onClick = onNavigateToBluetooth
-        )
+
         MoreHubTile(
             title = "Messages",
             subtitle = "Caregiver chat & quick pings",

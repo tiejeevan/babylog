@@ -240,6 +240,8 @@ object BluetoothCareEngine {
     @Volatile
     private var cachedActiveDutyName: String? = null
 
+    private var scanTimeoutJob: kotlinx.coroutines.Job? = null
+
     private val connectionLifecycleCallback = object : ConnectionLifecycleCallback() {
         override fun onConnectionInitiated(endpointId: String, connectionInfo: ConnectionInfo) {
             Log.d(TAG, "Connection initiated with ${connectionInfo.endpointName}")
@@ -277,6 +279,7 @@ object BluetoothCareEngine {
                 CareSyncForegroundService.stop(ctx)
                 if (_careSyncEnabled.value) {
                     _statusText.value = "Peer left · searching again..."
+                    startDiscovery()
                 }
             }
         }
@@ -291,7 +294,13 @@ object BluetoothCareEngine {
                 isBonded = false
             )
             publishDiscovered()
-            val shouldInitiate = when {
+
+            val ctx = appContext
+            val forgottenSet = if (ctx != null) CareSyncPrefs.getForgottenDevices(ctx) else emptySet()
+            val rememberedSet = if (ctx != null) CareSyncPrefs.getRememberedDevices(ctx) else emptySet()
+            val isRemembered = info.endpointName in rememberedSet && info.endpointName !in forgottenSet
+
+            val shouldInitiate = isRemembered || when {
                 localEndpointName < info.endpointName -> true
                 localEndpointName > info.endpointName -> false
                 else -> deviceId < endpointId
@@ -357,16 +366,14 @@ object BluetoothCareEngine {
         _careSyncEnabled.value = CareSyncPrefs.isCareSyncEnabled(context)
         _muteNonUrgentWhenOffDuty.value = CareSyncPrefs.isMuteNonUrgentWhenOffDuty(context)
         _vibrateOnReceive.value = CareSyncPrefs.isVibrateOnReceive(context)
+        myCaregiverName = CareSyncPrefs.getCaregiverName(context)
+        myCaregiverRole = CareSyncPrefs.getCaregiverRole(context)
+        localEndpointName = myCaregiverName
         scope.launch {
             loadChatHistory()
             refreshOutboxCount()
             refreshUnreadCount()
             cachedActiveDutyName = repository?.getActiveDutyDirect()?.takeIf { it.isActive }?.caregiverName
-        }
-        scope.launch {
-            repository?.getUnreadIncomingCountFlow()?.collect { count ->
-                _unreadIncomingCount.value = count
-            }
         }
         if (_careSyncEnabled.value) {
             startCareSync(context.applicationContext)
@@ -375,13 +382,61 @@ object BluetoothCareEngine {
         }
     }
 
+    fun setMyCaregiverName(context: Context, name: String) {
+        appContext = context.applicationContext
+        myCaregiverName = name.ifBlank { "Parent" }
+        localEndpointName = myCaregiverName
+        CareSyncPrefs.setCaregiverName(context.applicationContext, myCaregiverName)
+    }
+
     fun setMyCaregiverName(name: String) {
-        myCaregiverName = name
-        localEndpointName = name
+        myCaregiverName = name.ifBlank { "Parent" }
+        localEndpointName = myCaregiverName
+        appContext?.let { CareSyncPrefs.setCaregiverName(it, myCaregiverName) }
+    }
+
+    fun setMyCaregiverRole(context: Context, role: String) {
+        appContext = context.applicationContext
+        myCaregiverRole = role
+        CareSyncPrefs.setCaregiverRole(context.applicationContext, role)
     }
 
     fun setMyCaregiverRole(role: String) {
         myCaregiverRole = role
+        appContext?.let { CareSyncPrefs.setCaregiverRole(it, role) }
+    }
+
+    fun getMyCaregiverName(context: Context? = null): String {
+        if (context != null) {
+            val saved = CareSyncPrefs.getCaregiverName(context)
+            if (saved.isNotBlank()) myCaregiverName = saved
+        }
+        return myCaregiverName
+    }
+
+    fun getMyCaregiverRole(context: Context? = null): String {
+        if (context != null) {
+            val saved = CareSyncPrefs.getCaregiverRole(context)
+            if (saved.isNotBlank()) myCaregiverRole = saved
+        }
+        return myCaregiverRole
+    }
+
+    fun disconnectEndpoint(endpointId: String) {
+        val client = connectionsClient ?: return
+        client.disconnectFromEndpoint(endpointId)
+        connectedEndpoints.remove(endpointId)
+        pendingAuth.remove(endpointId)
+        refreshConnectionState()
+    }
+
+    fun forgetDevice(context: Context, deviceNameOrAddress: String) {
+        CareSyncPrefs.addForgottenDevice(context, deviceNameOrAddress)
+        CareSyncPrefs.removeRememberedDevice(context, deviceNameOrAddress)
+        val targetEndpoint = connectedEndpoints.entries.firstOrNull { it.value == deviceNameOrAddress }?.key
+        if (targetEndpoint != null) {
+            disconnectEndpoint(targetEndpoint)
+        }
     }
 
     fun setBabyName(name: String) {
@@ -728,6 +783,7 @@ object BluetoothCareEngine {
 
     private fun startDiscovery() {
         val client = connectionsClient ?: return
+        scanTimeoutJob?.cancel()
         val options = DiscoveryOptions.Builder().setStrategy(STRATEGY).build()
         client.startDiscovery(
             SERVICE_ID,
@@ -736,6 +792,15 @@ object BluetoothCareEngine {
         ).addOnSuccessListener {
             Log.d(TAG, "Discovery started")
             _isScanning.value = true
+            scanTimeoutJob = scope.launch {
+                kotlinx.coroutines.delay(30_000L)
+                if (connectedEndpoints.isEmpty()) {
+                    Log.d(TAG, "Scan window timed out after 30s — pausing active discovery to save battery")
+                    connectionsClient?.stopDiscovery()
+                    _isScanning.value = false
+                    updateStatusSummary()
+                }
+            }
         }.addOnFailureListener { e ->
             Log.e(TAG, "Discovery failed", e)
             _statusText.value = "Discovery failed: ${e.localizedMessage}"
@@ -744,6 +809,8 @@ object BluetoothCareEngine {
     }
 
     private fun stopAdvertisingAndDiscovery() {
+        scanTimeoutJob?.cancel()
+        scanTimeoutJob = null
         connectionsClient?.stopAdvertising()
         connectionsClient?.stopDiscovery()
         _isScanning.value = false
@@ -913,7 +980,16 @@ object BluetoothCareEngine {
         _connectedDeviceName.value = peerName
         _statusText.value = "Connected to $peerName · syncing"
         _lastSyncedAt.value = System.currentTimeMillis()
-        appContext?.let { CareSyncForegroundService.start(it, peerName) }
+        appContext?.let { ctx ->
+            CareSyncForegroundService.start(ctx, peerName)
+            CareSyncPrefs.addRememberedDevice(ctx, peerName)
+        }
+        // Stop active discovery scanning when connected to preserve battery
+        scanTimeoutJob?.cancel()
+        scanTimeoutJob = null
+        connectionsClient?.stopDiscovery()
+        _isScanning.value = false
+
         sendSyncOffer(endpointId)
         updateStatusSummary()
     }
@@ -1314,10 +1390,12 @@ object BluetoothCareEngine {
             connectedEndpoints.isNotEmpty() -> {
                 val peers = connectedEndpoints.values.joinToString(", ")
                 val synced = if (_lastSyncedAt.value > 0) " · synced" else ""
-                "Nearby · Connected to $peers$synced$pendingSuffix"
+                "Connected to $peers$synced$pendingSuffix"
             }
-            _isScanning.value || _connectionState.value == BluetoothConnectionState.HOSTING_SERVER ->
-                "Nearby · Searching for caregivers...$pendingSuffix"
+            _isScanning.value ->
+                "Searching for caregivers...$pendingSuffix"
+            _connectionState.value == BluetoothConnectionState.HOSTING_SERVER ->
+                "Care Sync Active • Tap Rescan to find devices$pendingSuffix"
             else -> "Care Sync on$pendingSuffix"
         }
     }

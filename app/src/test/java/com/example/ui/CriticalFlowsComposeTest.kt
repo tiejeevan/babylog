@@ -80,6 +80,36 @@ class CriticalFlowsComposeTest {
     }
 
     @Test
+    fun bottleDialogSupportsFineTunedVolume35ml() {
+        var confirmedVolume = 0
+
+        composeRule.setContent {
+            BabyCareTheme {
+                CompositionLocalProvider(LocalUseBottomSheet provides false) {
+                    LogBottleDialog(
+                        onDismiss = {},
+                        onConfirm = { volume, _, _, _ ->
+                            confirmedVolume = volume
+                        }
+                    )
+                }
+            }
+        }
+
+        composeRule.onNodeWithTag("chip_volume_60").performClick()
+        composeRule.onNodeWithTag("btn_decrease_volume")
+            .performClick()
+            .performClick()
+            .performClick()
+            .performClick()
+            .performClick()
+
+        composeRule.onNodeWithTag("confirm_bottle_log").performScrollTo().performClick()
+
+        assertEquals(35, confirmedVolume)
+    }
+
+    @Test
     fun diaperDialogConfirmsSelectedStatus() {
         var status = ""
 
@@ -218,5 +248,26 @@ class CriticalFlowsComposeTest {
 
         assertEquals("Milo", completedName)
         assertTrue(completedName != null)
+    }
+
+    @Test
+    fun topBabyHeaderRendersCareSyncPillAndTriggersClick() {
+        var clicked = false
+        composeRule.setContent {
+            BabyCareTheme {
+                com.example.ui.components.TopBabyHeader(
+                    profile = BabyProfile(name = "Leo"),
+                    activeCaregiver = null,
+                    onSwitchCaregiverClick = {},
+                    onProfileClick = {},
+                    onOpenCareSyncClick = { clicked = true },
+                    careSyncEnabled = false
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag("care_sync_header_pill").assertIsDisplayed()
+        composeRule.onNodeWithTag("care_sync_header_pill").performClick()
+        assertTrue(clicked)
     }
 }

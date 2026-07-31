@@ -24,10 +24,12 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessTime
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.NightlightRound
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -640,18 +642,45 @@ fun VolumeSliderWithPresets(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(text = "Amount / Volume:", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
-            Surface(
-                color = FeedingColor.copy(alpha = 0.15f),
-                shape = RoundedCornerShape(8.dp)
-            ) {
-                val oz = (volumeMl / 29.5735).roundToInt()
-                Text(
-                    text = "$volumeMl ml ($oz oz)",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = FeedingColor,
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                )
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(
+                    onClick = { onVolumeChanged((volumeMl - 5).coerceAtLeast(5)) },
+                    modifier = Modifier.size(32.dp).testTag("btn_decrease_volume")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Remove,
+                        contentDescription = "Decrease 5ml",
+                        tint = FeedingColor,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+
+                Surface(
+                    color = FeedingColor.copy(alpha = 0.15f),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    val oz = (volumeMl / 29.5735).roundToInt()
+                    Text(
+                        text = "$volumeMl ml ($oz oz)",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = FeedingColor,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                    )
+                }
+
+                IconButton(
+                    onClick = { onVolumeChanged((volumeMl + 5).coerceAtMost(350)) },
+                    modifier = Modifier.size(32.dp).testTag("btn_increase_volume")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "Increase 5ml",
+                        tint = FeedingColor,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
             }
         }
 
@@ -678,8 +707,8 @@ fun VolumeSliderWithPresets(
 
         Slider(
             value = volumeMl.toFloat(),
-            onValueChange = { onVolumeChanged((it / 10).roundToInt() * 10) },
-            valueRange = 10f..350f,
+            onValueChange = { onVolumeChanged((it / 5).roundToInt() * 5) },
+            valueRange = 5f..350f,
             colors = SliderDefaults.colors(
                 thumbColor = FeedingColor,
                 activeTrackColor = FeedingColor,

@@ -128,15 +128,24 @@ import kotlinx.coroutines.delay
 
 private const val FAVORITE_SLOT_TYPE = "FAVORITE_SLOT"
 
+private data class HeaderPillState(
+    val bgColor: Color,
+    val textColor: Color,
+    val dot: String,
+    val text: String
+)
+
 @Composable
 fun TopBabyHeader(
     profile: BabyProfile?,
     activeCaregiver: CaregiverProfile?,
-    syncStatus: String,
+    syncStatus: String = "",
     onSwitchCaregiverClick: () -> Unit,
     onProfileClick: () -> Unit,
-    /** Placeholder status for future background care-kernel processes. */
-    backgroundKernelTitle: String = "No Process running"
+    onOpenCareSyncClick: () -> Unit = {},
+    careSyncEnabled: Boolean = false,
+    connectionState: com.example.engine.BluetoothConnectionState = com.example.engine.BluetoothConnectionState.DISCONNECTED,
+    connectedDeviceName: String? = null
 ) {
     var showExactAgeDialog by remember { mutableStateOf(false) }
 
@@ -144,6 +153,37 @@ fun TopBabyHeader(
         ExactAgeLiveDialog(
             profile = profile,
             onDismiss = { showExactAgeDialog = false }
+        )
+    }
+
+    val myRole = com.example.engine.BluetoothCareEngine.getMyCaregiverRole().ifBlank {
+        activeCaregiver?.name ?: "Caregiver"
+    }
+
+    val pillState = when {
+        !careSyncEnabled -> HeaderPillState(
+            MaterialTheme.colorScheme.surfaceVariant,
+            MaterialTheme.colorScheme.onSurfaceVariant,
+            "⚪",
+            "No Device Connected"
+        )
+        connectionState == com.example.engine.BluetoothConnectionState.CONNECTED && connectedDeviceName != null -> HeaderPillState(
+            MaterialTheme.colorScheme.primaryContainer,
+            MaterialTheme.colorScheme.onPrimaryContainer,
+            "🟢",
+            "Connected to $connectedDeviceName"
+        )
+        connectionState == com.example.engine.BluetoothConnectionState.HOSTING_SERVER || connectionState == com.example.engine.BluetoothConnectionState.CONNECTING -> HeaderPillState(
+            MaterialTheme.colorScheme.secondaryContainer,
+            MaterialTheme.colorScheme.onSecondaryContainer,
+            "⏳",
+            "Searching..."
+        )
+        else -> HeaderPillState(
+            MaterialTheme.colorScheme.surfaceVariant,
+            MaterialTheme.colorScheme.onSurfaceVariant,
+            "📡",
+            "Care Sync Idle"
         )
     }
 
@@ -162,93 +202,93 @@ fun TopBabyHeader(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Baby Profile & Age
+                // Left: Baby Avatar + Name + Age
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.weight(1f, fill = false)
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(46.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.primaryContainer)
-                            .clickable { onProfileClick() },
-                        contentAlignment = Alignment.Center
+                    Surface(
+                        onClick = onProfileClick,
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        modifier = Modifier.size(44.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.ChildCare,
-                            contentDescription = "Baby Profile",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(28.dp)
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Column(modifier = Modifier.weight(1f, fill = false)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = profile?.name ?: "Your Baby",
-                                style = MaterialTheme.typography.titleLarge.copy(
-                                    fontWeight = FontWeight.Bold
-                                ),
-                                color = MaterialTheme.colorScheme.onSurface,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier
-                                    .weight(1f, fill = false)
-                                    .clickable { onProfileClick() }
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.ChildCare,
+                                contentDescription = "Baby Profile",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(26.dp)
                             )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Surface(
-                                onClick = { if (profile != null) showExactAgeDialog = true },
-                                enabled = profile != null,
-                                color = MaterialTheme.colorScheme.primaryContainer,
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.testTag("exact_age_chip")
-                            ) {
-                                Text(
-                                    text = profile?.getFormattedAge() ?: "Newborn",
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                )
-                            }
                         }
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
                         Text(
-                            text = backgroundKernelTitle,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            text = profile?.name ?: "Your Baby",
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontWeight = FontWeight.Bold
+                            ),
+                            color = MaterialTheme.colorScheme.onSurface,
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            softWrap = false,
+                            modifier = Modifier.clickable { onProfileClick() }
                         )
+                        Surface(
+                            onClick = { if (profile != null) showExactAgeDialog = true },
+                            enabled = profile != null,
+                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.testTag("exact_age_chip")
+                        ) {
+                            Text(
+                                text = profile?.getFormattedAge() ?: "Newborn",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                maxLines = 1,
+                                softWrap = false,
+                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+                            )
+                        }
                     }
                 }
 
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    // Active Caregiver Pill
-                    Surface(
-                        onClick = onSwitchCaregiverClick,
-                        shape = RoundedCornerShape(20.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                        modifier = Modifier.testTag("caregiver_pill")
+                Spacer(modifier = Modifier.width(8.dp))
+
+                // Right: Clean Care Sync Status & Identity Pill
+                Surface(
+                    onClick = onOpenCareSyncClick,
+                    shape = RoundedCornerShape(20.dp),
+                    color = pillState.bgColor,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+                    modifier = Modifier
+                        .testTag("care_sync_header_pill")
+                        .testTag("caregiver_pill")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(12.dp)
-                                    .clip(CircleShape)
-                                    .background(parseHexColor(activeCaregiver?.avatarColorHex))
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
+                        Text(text = pillState.dot, fontSize = 11.sp)
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = pillState.text,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = pillState.textColor,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        if (myRole.isNotBlank()) {
                             Text(
-                                text = activeCaregiver?.name ?: "Sarah (Mom)",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                text = " • $myRole",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = pillState.textColor.copy(alpha = 0.85f),
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
@@ -256,48 +296,59 @@ fun TopBabyHeader(
                     }
                 }
             }
+        }
+    }
+}
 
-            Spacer(modifier = Modifier.height(8.dp))
+@Composable
+fun CareSyncHeaderPill(
+    careSyncEnabled: Boolean,
+    connectionState: com.example.engine.BluetoothConnectionState,
+    connectedDeviceName: String?,
+    onClick: () -> Unit
+) {
+    val (bgColor, contentColor, statusText) = when {
+        !careSyncEnabled -> Triple(
+            MaterialTheme.colorScheme.surfaceVariant,
+            MaterialTheme.colorScheme.onSurfaceVariant,
+            "⚪ No Device Connected"
+        )
+        connectionState == com.example.engine.BluetoothConnectionState.CONNECTED && connectedDeviceName != null -> Triple(
+            MaterialTheme.colorScheme.primaryContainer,
+            MaterialTheme.colorScheme.onPrimaryContainer,
+            "🟢 Connected to $connectedDeviceName"
+        )
+        connectionState == com.example.engine.BluetoothConnectionState.HOSTING_SERVER || connectionState == com.example.engine.BluetoothConnectionState.CONNECTING -> Triple(
+            MaterialTheme.colorScheme.secondaryContainer,
+            MaterialTheme.colorScheme.onSecondaryContainer,
+            "⏳ Searching for nearby devices..."
+        )
+        else -> Triple(
+            MaterialTheme.colorScheme.surfaceVariant,
+            MaterialTheme.colorScheme.onSurfaceVariant,
+            "📡 Care Sync Idle"
+        )
+    }
 
-            // Real-Time Sync Indicator
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(start = 2.dp)
-            ) {
-                val infiniteTransition = rememberInfiniteTransition(label = "pulse")
-                val alpha by infiniteTransition.animateFloat(
-                    initialValue = 0.4f,
-                    targetValue = 1.0f,
-                    animationSpec = infiniteRepeatable(
-                        animation = tween(1000, easing = FastOutSlowInEasing),
-                        repeatMode = RepeatMode.Reverse
-                    ),
-                    label = "pulse"
-                )
-
-                Box(
-                    modifier = Modifier
-                        .size(8.dp)
-                        .clip(CircleShape)
-                        .background(Color(0xFF4CAF50))
-                        .alpha(alpha)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Icon(
-                    imageVector = Icons.Default.Sync,
-                    contentDescription = null,
-                    modifier = Modifier.size(12.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = syncStatus,
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(16.dp),
+        color = bgColor,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+        modifier = Modifier.testTag("care_sync_header_pill")
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = statusText,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+                color = contentColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }

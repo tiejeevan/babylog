@@ -73,6 +73,7 @@ import com.example.ui.dialogs.LogMedicineDialog
 import com.example.ui.dialogs.LogNurseDialog
 import com.example.ui.dialogs.LogSleepDialog
 import com.example.ui.dialogs.LogTemperatureDialog
+import com.example.ui.dialogs.NearbyCareSyncBottomSheet
 import com.example.ui.dialogs.OnboardingSetupDialog
 import com.example.ui.viewmodel.BabyCareViewModel
 import kotlin.math.max
@@ -81,7 +82,7 @@ import kotlin.math.max
 fun DashboardScreen(
     viewModel: BabyCareViewModel,
     onNavigateToTimeline: () -> Unit,
-    onNavigateToFamily: () -> Unit,
+    onNavigateToFamily: () -> Unit = {},
     onNavigateToInsights: () -> Unit = {},
     onNavigateToSleepSound: () -> Unit = {},
     onNavigateToBluetooth: () -> Unit = {},
@@ -103,6 +104,7 @@ fun DashboardScreen(
     val dashboardPattern by viewModel.dashboardPatternHighlight.collectAsStateWithLifecycle()
     val careSyncEnabled by BluetoothCareEngine.careSyncEnabled.collectAsStateWithLifecycle()
     val connectionState by BluetoothCareEngine.connectionState.collectAsStateWithLifecycle()
+    val connectedDeviceName by BluetoothCareEngine.connectedDeviceName.collectAsStateWithLifecycle()
     val unreadCount by BluetoothCareEngine.unreadIncomingCount.collectAsStateWithLifecycle()
     val showPeerChatFab = careSyncEnabled &&
         connectionState == BluetoothConnectionState.CONNECTED
@@ -112,6 +114,7 @@ fun DashboardScreen(
     // Dialog state
     var activeActionDialog by remember { mutableStateOf<String?>(null) }
     var showSetupProfileDialog by remember { mutableStateOf(false) }
+    var showNearbySyncSheet by remember { mutableStateOf(false) }
     var editingLog by remember { mutableStateOf<ActivityLog?>(null) }
     var dismissedSleepPrompt by remember { mutableStateOf(false) }
     val sleepGapPrompt = remember(recentLogs, ongoingActivity, currentTimeMillis) {
@@ -357,8 +360,12 @@ fun DashboardScreen(
                     profile = profile,
                     activeCaregiver = activeCaregiver,
                     syncStatus = syncStatus,
-                    onSwitchCaregiverClick = onNavigateToFamily,
-                    onProfileClick = { showSetupProfileDialog = true }
+                    onSwitchCaregiverClick = { showNearbySyncSheet = true },
+                    onProfileClick = { showSetupProfileDialog = true },
+                    onOpenCareSyncClick = { showNearbySyncSheet = true },
+                    careSyncEnabled = careSyncEnabled,
+                    connectionState = connectionState,
+                    connectedDeviceName = connectedDeviceName
                 )
             }
 
@@ -595,55 +602,16 @@ fun DashboardScreen(
                 }
             }
 
-            // Bluetooth Peer Sync & Ping Quick Access Card
-            item {
-                Card(
-                    onClick = onNavigateToBluetooth,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp)
-                        .testTag("card_bluetooth_sync_launcher"),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "📡 Nearby Care Sync",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSecondaryContainer
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "Connect nearby phones to sync logs and open caregiver messages",
-                                fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f)
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.width(8.dp))
-
-                        Button(
-                            onClick = onNavigateToBluetooth,
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Text("Sync 📳", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        }
-                    }
-                }
-            }
-
             item {
                 Spacer(modifier = Modifier.height(24.dp))
             }
+        }
+
+        if (showNearbySyncSheet) {
+            NearbyCareSyncBottomSheet(
+                viewModel = viewModel,
+                onDismiss = { showNearbySyncSheet = false }
+            )
         }
 
         if (showPeerChatFab) {
