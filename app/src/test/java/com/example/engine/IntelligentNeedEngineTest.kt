@@ -68,6 +68,77 @@ class IntelligentNeedEngineTest {
     }
 
     @Test
+    fun deriveDefaultNapDurationUsesAwakeWindowFraction() {
+        // 150m awake → ~57m nap
+        assertEquals(57, IntelligentNeedEngine.deriveDefaultNapDurationMinutes(profile, gapDurationMinutes = 240))
+        // Short gap clamps down
+        val short = IntelligentNeedEngine.deriveDefaultNapDurationMinutes(profile, gapDurationMinutes = 50)
+        assertTrue(short <= 20)
+    }
+
+    @Test
+    fun detectUnloggedSleepGapIncludesIntermediateAnchors() {
+        val now = 10_000_000L
+        val lastSleepEnd = now - TimeUnit.HOURS.toMillis(4)
+        val bottleAt = lastSleepEnd + TimeUnit.HOURS.toMillis(1)
+        val diaperAt = lastSleepEnd + TimeUnit.HOURS.toMillis(3)
+
+        val prompt = IntelligentNeedEngine.detectUnloggedSleepGap(
+            profile = profile,
+            logs = listOf(
+                ActivityLog(
+                    activityType = ActivityTypes.DIAPER,
+                    startTimeMillis = diaperAt,
+                    diaperStatus = "Wet"
+                ),
+                ActivityLog(
+                    activityType = ActivityTypes.BOTTLE,
+                    startTimeMillis = bottleAt,
+                    endTimeMillis = bottleAt + 10 * 60_000L,
+                    volumeMl = 100
+                ),
+                ActivityLog(
+                    activityType = ActivityTypes.SLEEP,
+                    startTimeMillis = lastSleepEnd - TimeUnit.HOURS.toMillis(1),
+                    endTimeMillis = lastSleepEnd
+                )
+            ),
+            ongoingLog = null,
+            currentTimeMillis = now
+        )
+
+        assertTrue(prompt != null)
+        assertEquals(2, prompt!!.intermediateActivities.size)
+        assertEquals("Bottle Feeding", prompt.prevActivity?.title)
+        assertEquals("Diaper Change", prompt.nextActivity?.title)
+        assertTrue(prompt.defaultNapDurationMinutes in 15..90)
+        // Centered with buffers
+        assertTrue(prompt.defaultNapStartMillis > prompt.gapStartMillis)
+        assertTrue(prompt.defaultNapStartMillis + prompt.defaultNapDurationMinutes * 60_000L < prompt.gapEndMillis)
+    }
+
+    @Test
+    fun detectUnloggedSleepGapSuppressedWhenOngoing() {
+        val now = 10_000_000L
+        val prompt = IntelligentNeedEngine.detectUnloggedSleepGap(
+            profile = profile,
+            logs = emptyList(),
+            ongoingLog = ActivityLog(activityType = ActivityTypes.BOTTLE, startTimeMillis = now - 60_000),
+            currentTimeMillis = now
+        )
+        assertEquals(null, prompt)
+    }
+
+    @Test
+    fun parseIntelligentGapPopoverExtractsRange() {
+        val notes = "Smart nap (57m) · Gap: 1:30 PM–4:30 PM (3h)"
+        val text = IntelligentNeedEngine.parseIntelligentGapPopover(notes)
+        assertTrue(text.contains("3h"))
+        assertTrue(text.contains("1:30 PM"))
+        assertTrue(text.contains("sleep pattern"))
+    }
+
+    @Test
     fun todaySummaryCountsFeedsDiapersAndSleep() {
         val dayStart = Calendar.getInstance().apply {
             set(Calendar.HOUR_OF_DAY, 0)

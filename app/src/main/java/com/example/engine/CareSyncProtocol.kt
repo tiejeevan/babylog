@@ -80,7 +80,8 @@ data class ActivityLogDto(
     val caregiverRole: String = "",
     val timestampMillis: Long = 0,
     val updatedAtMillis: Long = 0,
-    val isDeleted: Boolean = false
+    val isDeleted: Boolean = false,
+    val isSystemIntelligent: Boolean = false
 )
 
 @JsonClass(generateAdapter = true)

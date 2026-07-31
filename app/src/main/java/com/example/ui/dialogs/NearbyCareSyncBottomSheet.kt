@@ -40,6 +40,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -54,6 +55,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.engine.BluetoothCareEngine
 import com.example.engine.BluetoothConnectionState
+import com.example.engine.CareSyncDeviceLists
 import com.example.engine.CareSyncPrefs
 
 import com.example.ui.viewmodel.BabyCareViewModel
@@ -79,7 +81,11 @@ fun NearbyCareSyncBottomSheet(
 
     var nameDraft by remember(context) { mutableStateOf(BluetoothCareEngine.getMyCaregiverName(context)) }
     var roleDraft by remember(context) { mutableStateOf(BluetoothCareEngine.getMyCaregiverRole(context)) }
-    var forgottenDevicesSet by remember { mutableStateOf(CareSyncPrefs.getForgottenDevices(context)) }
+    var forgottenDevicesSet by remember { mutableStateOf(emptySet<String>()) }
+
+    LaunchedEffect(Unit) {
+        forgottenDevicesSet = CareSyncPrefs.getForgottenDevices(context)
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -328,8 +334,7 @@ fun NearbyCareSyncBottomSheet(
                                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                             OutlinedButton(
                                                 onClick = {
-                                                    BluetoothCareEngine.stopCareSync(context)
-                                                    BluetoothCareEngine.startCareSync(context)
+                                                    BluetoothCareEngine.disconnectConnectedPeer(context)
                                                     Toast.makeText(context, "Disconnected from device", Toast.LENGTH_SHORT).show()
                                                 },
                                                 shape = RoundedCornerShape(8.dp)
@@ -424,7 +429,11 @@ fun NearbyCareSyncBottomSheet(
                                 Spacer(modifier = Modifier.height(6.dp))
                             }
 
-                            val availableDevices = discoveredDevices.filter { it.name !in forgottenDevicesSet }
+                            val availableDevices = CareSyncDeviceLists.discoveredDevicesForUi(
+                                discovered = discoveredDevices,
+                                forgottenNames = forgottenDevicesSet,
+                                connectedDeviceName = connectedDeviceName
+                            )
                             if (availableDevices.isEmpty()) {
                                 Text(
                                     text = if (isScanning) "Searching for nearby devices..." else "No new nearby devices found. Tap Rescan to search.",
@@ -501,8 +510,12 @@ fun NearbyCareSyncBottomSheet(
                         }
                     }
 
-                    // Section 5: Forgotten Devices (Restore option)
-                    if (forgottenDevicesSet.isNotEmpty()) {
+                    // Section 5: Forgotten Devices (only those currently nearby)
+                    val nearbyForgotten = CareSyncDeviceLists.nearbyForgottenDevices(
+                        forgottenNames = forgottenDevicesSet,
+                        discovered = discoveredDevices
+                    )
+                    if (nearbyForgotten.isNotEmpty()) {
                         item {
                             Column(modifier = Modifier.fillMaxWidth()) {
                                 Text(
@@ -515,7 +528,7 @@ fun NearbyCareSyncBottomSheet(
                                 Spacer(modifier = Modifier.height(4.dp))
 
                                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    forgottenDevicesSet.forEach { deviceName ->
+                                    nearbyForgotten.forEach { deviceName ->
                                         Row(
                                             modifier = Modifier.fillMaxWidth(),
                                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -530,6 +543,7 @@ fun NearbyCareSyncBottomSheet(
                                                 onClick = {
                                                     CareSyncPrefs.removeForgottenDevice(context, deviceName)
                                                     forgottenDevicesSet = CareSyncPrefs.getForgottenDevices(context)
+                                                    BluetoothCareEngine.startActiveScan(context)
                                                     Toast.makeText(context, "Restored auto-connect for $deviceName", Toast.LENGTH_SHORT).show()
                                                 }
                                             ) {

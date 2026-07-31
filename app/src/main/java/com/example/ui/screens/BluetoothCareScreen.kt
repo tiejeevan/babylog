@@ -64,6 +64,8 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.engine.BluetoothCareEngine
 import com.example.engine.BluetoothConnectionState
+import com.example.engine.CareSyncDeviceLists
+import com.example.engine.CareSyncPrefs
 import com.example.ui.viewmodel.BabyCareViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -93,8 +95,13 @@ fun BluetoothCareScreen(
     var pinDraft by remember(passcode) { mutableStateOf(passcode) }
     var selectedRole by remember { mutableStateOf(activeCaregiver?.name ?: "Dad") }
     var permissionsGranted by remember { mutableStateOf(false) }
+    var forgottenDevicesSet by remember { mutableStateOf(emptySet<String>()) }
 
     val timeFmt = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
+
+    LaunchedEffect(Unit) {
+        forgottenDevicesSet = CareSyncPrefs.getForgottenDevices(context)
+    }
 
     LaunchedEffect(selectedRole) {
         BluetoothCareEngine.setMyCaregiverName(selectedRole)
@@ -415,11 +422,16 @@ fun BluetoothCareScreen(
                     }
                 }
 
-                if (discoveredDevices.isNotEmpty()) {
+                val availableDevices = CareSyncDeviceLists.discoveredDevicesForUi(
+                    discovered = discoveredDevices,
+                    forgottenNames = forgottenDevicesSet,
+                    connectedDeviceName = connectedDeviceName
+                )
+                if (availableDevices.isNotEmpty()) {
                     item {
                         Text("Nearby phones", fontWeight = FontWeight.Bold)
                     }
-                    items(discoveredDevices, key = { it.address }) { device ->
+                    items(availableDevices, key = { it.address }) { device ->
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()

@@ -36,6 +36,7 @@ import com.example.engine.PatternReport
 import com.example.engine.ReminderEngine
 import com.example.engine.ReminderTiming
 import com.example.engine.RoutineTriggers
+import com.example.engine.SmartSleepGapPrompt
 import com.example.engine.TodaySummary
 import com.example.notification.AlarmSoundController
 import com.example.notification.BabyNotificationManager
@@ -573,7 +574,8 @@ class BabyCareViewModel @JvmOverloads constructor(
         startTimeMillis: Long? = null,
         endTimeMillis: Long? = null,
         leftBreastSec: Long = 0,
-        rightBreastSec: Long = 0
+        rightBreastSec: Long = 0,
+        isSystemIntelligent: Boolean = false
     ) {
         viewModelScope.launch {
             val caregiver = activeCaregiver.value ?: CaregiverProfile(name = "Sarah (Mom)", role = "Owner", relationship = "Mother")
@@ -602,7 +604,8 @@ class BabyCareViewModel @JvmOverloads constructor(
                 notes = notes,
                 caregiverName = caregiver.name,
                 caregiverRole = caregiver.relationship,
-                timestampMillis = start
+                timestampMillis = start,
+                isSystemIntelligent = isSystemIntelligent
             )
             val saved = repository.insertLog(log)
             com.example.engine.BluetoothCareEngine.broadcastLogUpsert(saved)
@@ -613,6 +616,27 @@ class BabyCareViewModel @JvmOverloads constructor(
                 rescheduleReminders()
             }
         }
+    }
+
+    fun logIntelligentNap(
+        startTimeMillis: Long,
+        endTimeMillis: Long,
+        gapPrompt: SmartSleepGapPrompt
+    ) {
+        val durationMinutes = ((endTimeMillis - startTimeMillis) / 60_000L).toInt().coerceAtLeast(1)
+        val notes = IntelligentNeedEngine.intelligentNapNotes(
+            durationMinutes = durationMinutes,
+            gapStartMillis = gapPrompt.gapStartMillis,
+            gapEndMillis = gapPrompt.gapEndMillis
+        )
+        quickLogActivity(
+            activityType = ActivityTypes.SLEEP,
+            durationSeconds = ((endTimeMillis - startTimeMillis) / 1000L).coerceAtLeast(60L),
+            startTimeMillis = startTimeMillis,
+            endTimeMillis = endTimeMillis,
+            notes = notes,
+            isSystemIntelligent = true
+        )
     }
 
     fun editLog(log: ActivityLog) {

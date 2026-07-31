@@ -1397,11 +1397,15 @@ fun SmartSleepGapPromptCard(
     prompt: com.example.engine.SmartSleepGapPrompt,
     babyName: String,
     onQuickLogNap: (durationMinutes: Int) -> Unit,
+    onAdjustTimeline: () -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val timeFmt = remember { java.text.SimpleDateFormat("h:mm a", java.util.Locale.getDefault()) }
     Card(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .testTag("smart_sleep_gap_prompt_card"),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
             containerColor = com.example.ui.theme.SleepColor.copy(alpha = 0.12f)
@@ -1414,11 +1418,11 @@ fun SmartSleepGapPromptCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = "💤",
-                        fontSize = 18.sp
-                    )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(text = "💤", fontSize = 18.sp)
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = "Did $babyName take an unlogged nap?",
@@ -1434,27 +1438,60 @@ fun SmartSleepGapPromptCard(
             }
 
             Text(
-                text = "No sleep logged for ${prompt.minutesSinceLastActivity / 60}h ${prompt.minutesSinceLastActivity % 60}m. Quick-log a nap ending just now:",
+                text = "Unlogged Gap: ${com.example.engine.IntelligentNeedEngine.formatGapRange(prompt.gapStartMillis, prompt.gapEndMillis)}",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 2.dp, bottom = 10.dp)
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(top = 4.dp)
             )
+
+            prompt.prevActivity?.let { prev ->
+                Text(
+                    text = "After: ${prev.title} @ ${timeFmt.format(java.util.Date(prev.timeMillis))}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            prompt.nextActivity?.let { next ->
+                Text(
+                    text = "Before: ${next.title} @ ${timeFmt.format(java.util.Date(next.timeMillis))}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 prompt.suggestedDurationsMinutes.forEach { duration ->
-                    val label = if (duration < 60) "${duration}m" else if (duration == 60) "1h" else "${duration / 60.0}h"
+                    val label = when {
+                        duration < 60 -> "${duration}m"
+                        duration % 60 == 0 -> "${duration / 60}h"
+                        else -> String.format(java.util.Locale.US, "%.1fh", duration / 60.0)
+                    }
                     com.example.ui.dialogs.SquareChoiceChip(
                         selected = false,
                         onClick = { onQuickLogNap(duration) },
                         label = label,
                         accentColor = com.example.ui.theme.SleepColor,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("quick_nap_chip_$duration")
                     )
                 }
             }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            com.example.ui.dialogs.SquareActionButton(
+                onClick = onAdjustTimeline,
+                containerColor = com.example.ui.theme.SleepColor,
+                text = "Adjust Timeline (Custom Nap)",
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("adjust_timeline_btn")
+            )
         }
     }
 }

@@ -288,6 +288,10 @@ object BluetoothCareEngine {
     private val endpointDiscoveryCallback = object : EndpointDiscoveryCallback() {
         override fun onEndpointFound(endpointId: String, info: DiscoveredEndpointInfo) {
             Log.d(TAG, "Found endpoint ${info.endpointName} ($endpointId)")
+            // Connected peers stay out of the discovered list
+            if (connectedEndpoints.containsKey(endpointId)) {
+                return
+            }
             discoveredEndpoints[endpointId] = DiscoveredBluetoothDevice(
                 name = info.endpointName,
                 address = endpointId,
@@ -298,16 +302,15 @@ object BluetoothCareEngine {
             val ctx = appContext
             val forgottenSet = if (ctx != null) CareSyncPrefs.getForgottenDevices(ctx) else emptySet()
             val rememberedSet = if (ctx != null) CareSyncPrefs.getRememberedDevices(ctx) else emptySet()
-            val isRemembered = info.endpointName in rememberedSet && info.endpointName !in forgottenSet
-
-            val shouldInitiate = isRemembered || when {
-                localEndpointName < info.endpointName -> true
-                localEndpointName > info.endpointName -> false
-                else -> deviceId < endpointId
-            }
-            if (shouldInitiate &&
-                !connectedEndpoints.containsKey(endpointId) &&
-                !pendingAuth.containsKey(endpointId)
+            if (CareSyncDeviceLists.shouldAutoConnect(
+                    endpointName = info.endpointName,
+                    forgottenNames = forgottenSet,
+                    rememberedNames = rememberedSet,
+                    localEndpointName = localEndpointName,
+                    localDeviceId = deviceId,
+                    endpointId = endpointId,
+                    alreadyConnectedOrPending = pendingAuth.containsKey(endpointId)
+                )
             ) {
                 requestConnection(endpointId, info.endpointName)
             }
@@ -435,7 +438,34 @@ object BluetoothCareEngine {
         CareSyncPrefs.removeRememberedDevice(context, deviceNameOrAddress)
         val targetEndpoint = connectedEndpoints.entries.firstOrNull { it.value == deviceNameOrAddress }?.key
         if (targetEndpoint != null) {
+            // Connected peer leaves discovered after disconnect; drop discovery entry too
+            discoveredEndpoints.remove(targetEndpoint)
             disconnectEndpoint(targetEndpoint)
+        }
+        // Non-connected forgotten peers stay in discoveredEndpoints so the UI can
+        // show them under "Forgotten Devices" while they remain nearby.
+        publishDiscovered()
+    }
+
+    /**
+     * Drop the active peer without turning Care Sync off.
+     * Advertising stays up; discovery restarts so nearby devices can be found again.
+     */
+    fun disconnectConnectedPeer(context: Context) {
+        initialize(context)
+        val endpointIds = connectedEndpoints.keys.toList()
+        if (endpointIds.isEmpty()) {
+            if (_careSyncEnabled.value) {
+                startDiscovery()
+                _statusText.value = "Searching for nearby caregivers..."
+            }
+            return
+        }
+        endpointIds.forEach { disconnectEndpoint(it) }
+        appContext?.let { CareSyncForegroundService.stop(it) }
+        if (_careSyncEnabled.value) {
+            _statusText.value = "Disconnected · searching again..."
+            startDiscovery()
         }
     }
 
@@ -533,11 +563,23 @@ object BluetoothCareEngine {
         initialize(context)
         if (!_careSyncEnabled.value) {
             startCareSync(context)
-        } else {
-            startDiscovery()
-            _isScanning.value = true
-            _statusText.value = "Scanning for nearby caregivers..."
+            return
         }
+        scanTimeoutJob?.cancel()
+        scanTimeoutJob = null
+        connectionsClient?.stopDiscovery()
+        clearDiscoveredExceptConnected()
+        publishDiscovered()
+        _isScanning.value = true
+        _statusText.value = "Scanning for nearby caregivers..."
+        startDiscovery()
+    }
+
+    private fun clearDiscoveredExceptConnected() {
+        CareSyncDeviceLists.clearDiscoveredExceptConnected(
+            discoveredEndpoints,
+            connectedEndpoints.keys.toSet()
+        )
     }
 
     fun refreshPairedDevices(context: Context) {
@@ -976,6 +1018,8 @@ object BluetoothCareEngine {
     private fun markAuthenticated(endpointId: String, peerName: String) {
         connectedEndpoints[endpointId] = peerName
         pendingAuth.remove(endpointId)
+        discoveredEndpoints.remove(endpointId)
+        publishDiscovered()
         _connectionState.value = BluetoothConnectionState.CONNECTED
         _connectedDeviceName.value = peerName
         _statusText.value = "Connected to $peerName · syncing"
@@ -1401,7 +1445,10 @@ object BluetoothCareEngine {
     }
 
     private fun publishDiscovered() {
-        val list = discoveredEndpoints.values.toList()
+        val list = CareSyncDeviceLists.excludeConnectedFromDiscovered(
+            discoveredEndpoints.values,
+            connectedEndpoints.keys.toSet()
+        )
         _discoveredDevices.value = list
         _pairedDevices.value = list.map { it.name to it.address }
     }
@@ -1496,7 +1543,8 @@ object BluetoothCareEngine {
         caregiverRole = caregiverRole,
         timestampMillis = timestampMillis,
         updatedAtMillis = updatedAtMillis,
-        isDeleted = isDeleted
+        isDeleted = isDeleted,
+        isSystemIntelligent = isSystemIntelligent
     )
 
     private fun ActivityLogDto.toEntity() = ActivityLog(
@@ -1520,7 +1568,8 @@ object BluetoothCareEngine {
         timestampMillis = timestampMillis,
         syncId = syncId,
         updatedAtMillis = updatedAtMillis,
-        isDeleted = isDeleted
+        isDeleted = isDeleted,
+        isSystemIntelligent = isSystemIntelligent
     )
 
     private fun GrowthRecord.toDto() = GrowthDto(

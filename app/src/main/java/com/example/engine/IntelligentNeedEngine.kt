@@ -12,11 +12,119 @@ enum class UrgencyLevel {
     LOW_ALL_GOOD
 }
 
-data class SmartSleepGapPrompt(
-    val estimatedNapStartMillis: Long,
-    val minutesSinceLastActivity: Long,
-    val suggestedDurationsMinutes: List<Int> = listOf(30, 45, 60, 90, 120)
+data class TimelineAnchor(
+    val activityType: String,
+    val title: String,
+    val timeMillis: Long,
+    val endTimeMillis: Long? = null
 )
+
+data class SmartSleepGapPrompt(
+    val gapStartMillis: Long,
+    val gapEndMillis: Long,
+    val prevActivity: TimelineAnchor?,
+    val nextActivity: TimelineAnchor?,
+    val intermediateActivities: List<TimelineAnchor>,
+    val defaultNapStartMillis: Long,
+    val defaultNapDurationMinutes: Int,
+    val minutesSinceLastSleep: Long,
+    val suggestedDurationsMinutes: List<Int> = listOf(30, 45, 60, 90)
+)
+
+/**
+ * Pure placement math for the interactive nap adjuster (unit-tested).
+ */
+data class NapPlacementState(
+    val gapStartMillis: Long,
+    val gapEndMillis: Long,
+    val napStartMillis: Long,
+    val napEndMillis: Long,
+    val intermediateActivities: List<TimelineAnchor> = emptyList(),
+    val minAwakeBufferMillis: Long = 15 * 60_000L
+) {
+    val durationMinutes: Int
+        get() = ((napEndMillis - napStartMillis) / 60_000L).toInt().coerceAtLeast(1)
+
+    val awakeBeforeMillis: Long
+        get() = (napStartMillis - gapStartMillis).coerceAtLeast(0)
+
+    val awakeAfterMillis: Long
+        get() = (gapEndMillis - napEndMillis).coerceAtLeast(0)
+
+    val overlappingActivities: List<TimelineAnchor>
+        get() = intermediateActivities.filter { anchor ->
+            val aStart = anchor.timeMillis
+            val aEnd = anchor.endTimeMillis ?: anchor.timeMillis
+            napStartMillis < aEnd && napEndMillis > aStart
+        }
+
+    val hasOverlap: Boolean get() = overlappingActivities.isNotEmpty()
+
+    fun clamp(): NapPlacementState {
+        val gapSpan = (gapEndMillis - gapStartMillis).coerceAtLeast(60_000L)
+        val buffer = minAwakeBufferMillis.coerceAtMost(gapSpan / 4)
+        val minStart = gapStartMillis + buffer
+        val maxEnd = gapEndMillis - buffer
+        var start = napStartMillis.coerceIn(minStart, maxEnd - 60_000L)
+        var end = napEndMillis.coerceIn(start + 60_000L, maxEnd)
+        if (end <= start) {
+            start = minStart
+            end = (start + 60_000L).coerceAtMost(maxEnd)
+        }
+        return copy(napStartMillis = start, napEndMillis = end)
+    }
+
+    fun withCenteredDuration(durationMinutes: Int): NapPlacementState {
+        val durationMs = durationMinutes.coerceAtLeast(1) * 60_000L
+        val gapSpan = gapEndMillis - gapStartMillis
+        val buffer = minAwakeBufferMillis.coerceAtMost(gapSpan / 4)
+        val usable = (gapSpan - 2 * buffer).coerceAtLeast(60_000L)
+        val dur = durationMs.coerceAtMost(usable)
+        val start = gapStartMillis + buffer + ((usable - dur) / 2)
+        return copy(napStartMillis = start, napEndMillis = start + dur).clamp()
+    }
+
+    fun snapAfter(prev: TimelineAnchor?): NapPlacementState {
+        if (prev == null) return this
+        val duration = napEndMillis - napStartMillis
+        val start = prev.endTimeMillis ?: prev.timeMillis
+        return copy(napStartMillis = start, napEndMillis = start + duration).clamp()
+    }
+
+    fun snapBefore(next: TimelineAnchor?): NapPlacementState {
+        if (next == null) return this
+        val duration = napEndMillis - napStartMillis
+        val end = next.timeMillis
+        return copy(napStartMillis = end - duration, napEndMillis = end).clamp()
+    }
+
+    fun panBy(deltaMillis: Long): NapPlacementState {
+        return copy(
+            napStartMillis = napStartMillis + deltaMillis,
+            napEndMillis = napEndMillis + deltaMillis
+        ).clamp()
+    }
+
+    fun resizeStart(newStartMillis: Long): NapPlacementState {
+        val minDuration = 15 * 60_000L
+        val start = newStartMillis.coerceAtMost(napEndMillis - minDuration)
+        return copy(napStartMillis = start).clamp()
+    }
+
+    fun resizeEnd(newEndMillis: Long): NapPlacementState {
+        val minDuration = 15 * 60_000L
+        val end = newEndMillis.coerceAtLeast(napStartMillis + minDuration)
+        return copy(napEndMillis = end).clamp()
+    }
+
+    companion object {
+        val PRESET_DURATIONS = listOf(30, 45, 60, 90, 120, 180)
+
+        fun nearestPresetMinutes(durationMinutes: Int): Int? =
+            PRESET_DURATIONS.minByOrNull { kotlin.math.abs(it - durationMinutes) }
+                ?.takeIf { kotlin.math.abs(it - durationMinutes) <= 5 }
+    }
+}
 
 data class BabyNeedPrediction(
     val primaryNeedTitle: String,
@@ -241,6 +349,14 @@ object IntelligentNeedEngine {
         )
     }
 
+    fun deriveDefaultNapDurationMinutes(profile: BabyProfile?, gapDurationMinutes: Long): Int {
+        val awakeWindow = profile?.targetNapIntervalMinutes ?: 150
+        // Typical nap ≈ 38% of awake window; clamp to sane range and leave ~15m buffers.
+        val derived = (awakeWindow * 0.38).toInt()
+        return derived.coerceIn(30, 90)
+            .coerceAtMost((gapDurationMinutes - 30).toInt().coerceAtLeast(15))
+    }
+
     fun detectUnloggedSleepGap(
         profile: BabyProfile?,
         logs: List<ActivityLog>,
@@ -250,21 +366,117 @@ object IntelligentNeedEngine {
         if (ongoingLog != null) return null
 
         val targetSleepInterval = profile?.targetNapIntervalMinutes ?: 150
-        val completedLogs = logs.filter { it.endTimeMillis != null || it.activityType == ActivityTypes.DIAPER || it.activityType == ActivityTypes.MEDICINE || it.activityType == ActivityTypes.TEMPERATURE }
+        val completedLogs = logs.filter {
+            it.endTimeMillis != null ||
+                it.activityType == ActivityTypes.DIAPER ||
+                it.activityType == ActivityTypes.MEDICINE ||
+                it.activityType == ActivityTypes.TEMPERATURE
+        }
 
         val lastSleep = completedLogs.firstOrNull { it.activityType == ActivityTypes.SLEEP }
-        val lastSleepEnd = lastSleep?.let { it.endTimeMillis ?: it.startTimeMillis } ?: (currentTimeMillis - (targetSleepInterval * 60_000L))
-        val minutesSinceSleep = TimeUnit.MILLISECONDS.toMinutes(currentTimeMillis - lastSleepEnd)
+        val lastSleepEnd = lastSleep?.let { it.endTimeMillis ?: it.startTimeMillis }
+            ?: (currentTimeMillis - (targetSleepInterval * 60_000L))
+        val gapStartMillis = lastSleepEnd
+        val gapEndMillis = currentTimeMillis
+        val minutesSinceSleep = TimeUnit.MILLISECONDS.toMinutes(gapEndMillis - gapStartMillis)
 
-        if (minutesSinceSleep > (targetSleepInterval + 30)) {
-            val estimatedStart = lastSleepEnd + (targetSleepInterval * 60_000L)
-            return SmartSleepGapPrompt(
-                estimatedNapStartMillis = estimatedStart,
-                minutesSinceLastActivity = minutesSinceSleep,
-                suggestedDurationsMinutes = listOf(30, 45, 60, 90, 120)
-            )
+        if (minutesSinceSleep <= (targetSleepInterval + 30)) return null
+
+        val intermediates = completedLogs
+            .filter { it.activityType != ActivityTypes.SLEEP }
+            .filter { log ->
+                val t = log.startTimeMillis
+                t > gapStartMillis && t < gapEndMillis
+            }
+            .sortedBy { it.startTimeMillis }
+            .map { it.toTimelineAnchor() }
+
+        val nowAnchor = TimelineAnchor(
+            activityType = "NOW",
+            title = "Now",
+            timeMillis = gapEndMillis,
+            endTimeMillis = gapEndMillis
+        )
+
+        // After = first activity in gap (or last sleep); Before = last mid-gap activity or Now.
+        val displayPrev = when {
+            intermediates.isEmpty() -> lastSleep?.toTimelineAnchor()
+            else -> intermediates.first()
         }
-        return null
+        val displayNext = when {
+            intermediates.size >= 2 -> intermediates.last()
+            else -> nowAnchor
+        }
+
+        val defaultDuration = deriveDefaultNapDurationMinutes(profile, minutesSinceSleep)
+        val placement = NapPlacementState(
+            gapStartMillis = gapStartMillis,
+            gapEndMillis = gapEndMillis,
+            napStartMillis = gapStartMillis,
+            napEndMillis = gapStartMillis + defaultDuration * 60_000L,
+            intermediateActivities = intermediates
+        ).withCenteredDuration(defaultDuration)
+
+        return SmartSleepGapPrompt(
+            gapStartMillis = gapStartMillis,
+            gapEndMillis = gapEndMillis,
+            prevActivity = displayPrev,
+            nextActivity = displayNext,
+            intermediateActivities = intermediates,
+            defaultNapStartMillis = placement.napStartMillis,
+            defaultNapDurationMinutes = placement.durationMinutes,
+            minutesSinceLastSleep = minutesSinceSleep,
+            suggestedDurationsMinutes = listOf(30, 60, 90, 120, 180)
+        )
+    }
+
+    private fun ActivityLog.toTimelineAnchor(): TimelineAnchor {
+        val title = when (activityType) {
+            ActivityTypes.BREASTFEEDING -> "Breastfeeding"
+            ActivityTypes.BOTTLE -> "Bottle Feeding"
+            ActivityTypes.DIAPER -> "Diaper Change"
+            ActivityTypes.SLEEP -> "Sleep / Nap"
+            ActivityTypes.PUMPING -> "Pumping"
+            ActivityTypes.MEDICINE -> "Medicine"
+            ActivityTypes.TEMPERATURE -> "Temperature"
+            ActivityTypes.BATH -> "Bath"
+            ActivityTypes.TUMMY_TIME -> "Tummy Time"
+            ActivityTypes.CUSTOM -> notes.substringBefore(" — ").ifBlank { "Custom" }
+            else -> activityType
+        }
+        return TimelineAnchor(
+            activityType = activityType,
+            title = title,
+            timeMillis = startTimeMillis,
+            endTimeMillis = endTimeMillis
+        )
+    }
+
+    fun formatGapRange(startMillis: Long, endMillis: Long): String {
+        val sdf = java.text.SimpleDateFormat("h:mm a", java.util.Locale.getDefault())
+        val start = sdf.format(java.util.Date(startMillis))
+        val end = sdf.format(java.util.Date(endMillis))
+        val mins = TimeUnit.MILLISECONDS.toMinutes(endMillis - startMillis)
+        return "$start–$end (${formatMinutes(mins)})"
+    }
+
+    fun intelligentNapNotes(durationMinutes: Int, gapStartMillis: Long, gapEndMillis: Long): String {
+        return "Smart nap (${durationMinutes}m) · Gap: ${formatGapRange(gapStartMillis, gapEndMillis)}"
+    }
+
+    fun parseIntelligentGapPopover(notes: String): String {
+        val gapPart = notes.substringAfter(" · Gap: ", missingDelimiterValue = "")
+        return if (gapPart.isNotBlank()) {
+            val range = gapPart.substringBefore(" (").trim()
+            val span = gapPart.substringAfter("(", "").substringBefore(")", "").trim()
+            if (span.isNotEmpty() && range.isNotEmpty()) {
+                "Suggested based on baby's sleep pattern for $span gap ($range)"
+            } else {
+                "Suggested based on baby's sleep pattern ($gapPart)"
+            }
+        } else {
+            "Suggested based on baby's sleep pattern"
+        }
     }
 
     fun computeTodaySummary(

@@ -47,7 +47,7 @@ import kotlinx.coroutines.launch
         MedicineAlarm::class,
         CareCheckSettings::class
     ],
-    version = 10,
+    version = 11,
     exportSchema = true
 )
 abstract class BabyCareDatabase : RoomDatabase() {
@@ -117,6 +117,17 @@ abstract class BabyCareDatabase : RoomDatabase() {
                 )
                 db.execSQL(
                     "UPDATE peer_chat_messages SET deliveryStatus = 'DELIVERED' WHERE isFromMe = 1"
+                )
+            }
+        }
+
+        val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    ALTER TABLE activity_logs
+                    ADD COLUMN isSystemIntelligent INTEGER NOT NULL DEFAULT 0
+                    """.trimIndent()
                 )
             }
         }
@@ -212,7 +223,7 @@ abstract class BabyCareDatabase : RoomDatabase() {
                     BabyCareDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
+                    .addMigrations(MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
                     .addCallback(DatabaseCallback())
                     // Never use fallbackToDestructiveMigration — add explicit Migration(N, N+1)
                     // when bumping [version] so app updates retain user data.

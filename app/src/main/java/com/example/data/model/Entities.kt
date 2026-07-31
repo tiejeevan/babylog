@@ -178,7 +178,9 @@ data class ActivityLog(
     /** Stable identity across devices for peer merge. */
     val syncId: String = java.util.UUID.randomUUID().toString(),
     val updatedAtMillis: Long = System.currentTimeMillis(),
-    val isDeleted: Boolean = false
+    val isDeleted: Boolean = false,
+    /** True when the log was auto-placed by System Intelligence (e.g. awake-gap nap). */
+    val isSystemIntelligent: Boolean = false
 )
 
 enum class MessageDeliveryStatus {

@@ -270,4 +270,73 @@ class CriticalFlowsComposeTest {
         composeRule.onNodeWithTag("care_sync_header_pill").performClick()
         assertTrue(clicked)
     }
+
+    @Test
+    fun activityLogCardShowsAiBadgeAndPopover() {
+        composeRule.setContent {
+            BabyCareTheme {
+                com.example.ui.components.ActivityLogCard(
+                    log = com.example.data.model.ActivityLog(
+                        id = 42,
+                        activityType = com.example.data.model.ActivityTypes.SLEEP,
+                        startTimeMillis = System.currentTimeMillis() - 3_600_000L,
+                        endTimeMillis = System.currentTimeMillis() - 2_700_000L,
+                        durationSeconds = 900,
+                        notes = "System intelligent nap (45m) · Gap: 1:30 PM–4:30 PM (3h)",
+                        isSystemIntelligent = true
+                    )
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag("ai_system_log_badge").assertIsDisplayed()
+        composeRule.onNodeWithTag("ai_system_log_badge").performClick()
+        composeRule.onNodeWithTag("ai_system_log_popover").assertIsDisplayed()
+    }
+
+    @Test
+    fun smartNapAdjusterRendersGapAndDisablesConfirmOnOverlap() {
+        val gapStart = 1_000_000L
+        val gapEnd = gapStart + 3 * 3_600_000L
+        val bottle = com.example.engine.TimelineAnchor(
+            activityType = "BOTTLE",
+            title = "Bottle Feeding",
+            timeMillis = gapStart + 90 * 60_000L,
+            endTimeMillis = gapStart + 100 * 60_000L
+        )
+        val prompt = com.example.engine.SmartSleepGapPrompt(
+            gapStartMillis = gapStart,
+            gapEndMillis = gapEnd,
+            prevActivity = bottle,
+            nextActivity = com.example.engine.TimelineAnchor(
+                activityType = "NOW",
+                title = "Now",
+                timeMillis = gapEnd
+            ),
+            intermediateActivities = listOf(bottle),
+            // Place default nap directly over the bottle so confirm is disabled
+            defaultNapStartMillis = bottle.timeMillis - 5 * 60_000L,
+            defaultNapDurationMinutes = 30,
+            minutesSinceLastSleep = 180
+        )
+
+        composeRule.setContent {
+            BabyCareTheme {
+                CompositionLocalProvider(LocalUseBottomSheet provides false) {
+                    com.example.ui.dialogs.SmartNapAdjusterSheet(
+                        prompt = prompt,
+                        babyName = "Ava",
+                        onConfirm = { _, _ -> },
+                        onDismiss = {}
+                    )
+                }
+            }
+        }
+
+        composeRule.onNodeWithTag("smart_nap_adjuster_sheet").assertIsDisplayed()
+        composeRule.onNodeWithTag("gap_timeline_track").assertIsDisplayed()
+        composeRule.onNodeWithTag("snap_after_btn").assertIsDisplayed()
+        composeRule.onNodeWithTag("overlap_warning").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("confirm_intelligent_nap_btn").performScrollTo().assertIsDisplayed()
+    }
 }

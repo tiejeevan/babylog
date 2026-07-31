@@ -6,6 +6,7 @@ import com.example.data.model.ActivityTypes
 import com.example.data.model.BabyProfile
 import com.example.data.model.CaregiverProfile
 import com.example.data.repository.BabyCareRepository
+import com.example.engine.SmartSleepGapPrompt
 import com.example.testing.MainDispatcherRule
 import com.example.testing.TestDatabase
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -92,6 +93,35 @@ class BabyCareViewModelFlowTest {
         assertEquals(ActivityTypes.BOTTLE, logs.first().activityType)
         assertEquals(150, logs.first().volumeMl)
         assertEquals("Formula", logs.first().milkType)
+    }
+
+    @Test
+    fun logIntelligentNapSetsSystemFlagAndGapNotes() = runTest {
+        val gapStart = System.currentTimeMillis() - 3 * 3_600_000L
+        val gapEnd = System.currentTimeMillis()
+        val prompt = SmartSleepGapPrompt(
+            gapStartMillis = gapStart,
+            gapEndMillis = gapEnd,
+            prevActivity = null,
+            nextActivity = null,
+            intermediateActivities = emptyList(),
+            defaultNapStartMillis = gapStart + 60 * 60_000L,
+            defaultNapDurationMinutes = 60,
+            minutesSinceLastSleep = 180
+        )
+        val napStart = gapStart + 90 * 60_000L
+        val napEnd = napStart + 45 * 60_000L
+        viewModel.logIntelligentNap(napStart, napEnd, prompt)
+        advanceUntilIdle()
+
+        val logs = viewModel.recentLogs.first { it.isNotEmpty() }
+        val nap = logs.first()
+        assertEquals(ActivityTypes.SLEEP, nap.activityType)
+        assertTrue(nap.isSystemIntelligent)
+        assertTrue(nap.notes.contains("Smart nap"))
+        assertTrue(nap.notes.contains("Gap:"))
+        assertEquals(napStart, nap.startTimeMillis)
+        assertEquals(napEnd, nap.endTimeMillis)
     }
 
     @Test

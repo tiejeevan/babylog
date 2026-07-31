@@ -117,7 +117,8 @@ fun DashboardScreen(
     var showNearbySyncSheet by remember { mutableStateOf(false) }
     var editingLog by remember { mutableStateOf<ActivityLog?>(null) }
     var dismissedSleepPrompt by remember { mutableStateOf(false) }
-    val sleepGapPrompt = remember(recentLogs, ongoingActivity, currentTimeMillis) {
+    var showNapAdjuster by remember { mutableStateOf(false) }
+    val sleepGapPrompt = remember(recentLogs, ongoingActivity, currentTimeMillis, profile) {
         IntelligentNeedEngine.detectUnloggedSleepGap(profile, recentLogs, ongoingActivity, currentTimeMillis)
     }
     var timelinePage by remember { mutableIntStateOf(0) }
@@ -413,20 +414,27 @@ fun DashboardScreen(
                             prompt = sleepGapPrompt,
                             babyName = profile?.name ?: "Baby",
                             onQuickLogNap = { durMin ->
-                                val now = System.currentTimeMillis()
-                                val start = sleepGapPrompt.estimatedNapStartMillis
-                                val end = (start + (durMin * 60_000L)).coerceAtMost(now)
-                                val durSec = ((end - start) / 1000L).coerceAtLeast(60L)
-                                viewModel.quickLogActivity(
-                                    activityType = ActivityTypes.SLEEP,
-                                    durationSeconds = durSec,
-                                    startTimeMillis = start,
-                                    endTimeMillis = end,
-                                    notes = "Logged in timeline gap (${durMin}m nap)"
+                                val placement = com.example.engine.NapPlacementState(
+                                    gapStartMillis = sleepGapPrompt.gapStartMillis,
+                                    gapEndMillis = sleepGapPrompt.gapEndMillis,
+                                    napStartMillis = sleepGapPrompt.defaultNapStartMillis,
+                                    napEndMillis = sleepGapPrompt.defaultNapStartMillis +
+                                        sleepGapPrompt.defaultNapDurationMinutes * 60_000L,
+                                    intermediateActivities = sleepGapPrompt.intermediateActivities
+                                ).withCenteredDuration(durMin)
+                                viewModel.logIntelligentNap(
+                                    startTimeMillis = placement.napStartMillis,
+                                    endTimeMillis = placement.napEndMillis,
+                                    gapPrompt = sleepGapPrompt
                                 )
                                 dismissedSleepPrompt = true
-                                Toast.makeText(context, "Logged ${durMin}m nap into timeline gap 💤", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(
+                                    context,
+                                    "Logged ${placement.durationMinutes}m intelligent nap 💤",
+                                    Toast.LENGTH_SHORT
+                                ).show()
                             },
+                            onAdjustTimeline = { showNapAdjuster = true },
                             onDismiss = { dismissedSleepPrompt = true }
                         )
                     }
@@ -659,6 +667,24 @@ fun DashboardScreen(
                 viewModel.editLog(updated)
                 editingLog = null
             }
+        )
+    }
+
+    if (showNapAdjuster && sleepGapPrompt != null) {
+        com.example.ui.dialogs.SmartNapAdjusterSheet(
+            prompt = sleepGapPrompt,
+            babyName = profile?.name ?: "Baby",
+            onConfirm = { start, end ->
+                viewModel.logIntelligentNap(
+                    startTimeMillis = start,
+                    endTimeMillis = end,
+                    gapPrompt = sleepGapPrompt
+                )
+                showNapAdjuster = false
+                dismissedSleepPrompt = true
+                Toast.makeText(context, "Logged intelligent nap 💤", Toast.LENGTH_SHORT).show()
+            },
+            onDismiss = { showNapAdjuster = false }
         )
     }
 }

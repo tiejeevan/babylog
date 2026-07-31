@@ -1,5 +1,6 @@
 package com.example.ui.components
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -29,11 +30,17 @@ import androidx.compose.material.icons.filled.Thermostat
 import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -58,6 +65,10 @@ import com.example.ui.viewmodel.BabyCareViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+private val AiBadgeBg = Color(0xFFFFEEEF)
+private val AiBadgeBorder = Color(0xFFEF5350)
+private val AiBadgeText = Color(0xFFC62828)
 
 @Composable
 fun ActivityLogCard(
@@ -108,6 +119,8 @@ fun ActivityLogCard(
         append("By ${log.caregiverName}")
     }
 
+    var showAiInfo by remember { mutableStateOf(false) }
+
     Card(
         modifier = modifier
             .fillMaxWidth()
@@ -157,6 +170,41 @@ fun ActivityLogCard(
                         fontWeight = FontWeight.SemiBold,
                         color = color
                     )
+                }
+
+                if (log.isSystemIntelligent) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Box {
+                        Surface(
+                            onClick = { showAiInfo = true },
+                            shape = RoundedCornerShape(8.dp),
+                            color = AiBadgeBg,
+                            border = BorderStroke(1.dp, AiBadgeBorder),
+                            modifier = Modifier.testTag("ai_system_log_badge")
+                        ) {
+                            Text(
+                                text = "✨ Smart Nap",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = AiBadgeText,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = showAiInfo,
+                            onDismissRequest = { showAiInfo = false }
+                        ) {
+                            Text(
+                                text = IntelligentNeedEngine.parseIntelligentGapPopover(log.notes),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier
+                                    .padding(horizontal = 12.dp, vertical = 8.dp)
+                                    .width(240.dp)
+                                    .testTag("ai_system_log_popover")
+                            )
+                        }
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(2.dp))
